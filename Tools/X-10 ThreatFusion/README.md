@@ -54,8 +54,8 @@ Contributions welcome! Please open an issue or submit a pull request.
 ## Screenshots
 
 ### Main Dashboard
-<img width="1326" height="535" alt="dashboard_1" src="https://github.com/user-attachments/assets/0dffeea3-d5e2-4e6a-924e-de8129aa9b18" />
-<img width="1361" height="555" alt="dashboard_2" src="https://github.com/user-attachments/assets/a1187292-abe3-4bb0-8dab-d21908fa30c0" />
+<img width="1345" height="539" alt="dashboard_1" src="https://github.com/user-attachments/assets/1e7a3af0-aaba-462e-9928-8c688b16cceb" />
+<img width="1353" height="558" alt="dashboard_2" src="https://github.com/user-attachments/assets/ca786aa6-cf09-4581-ac4e-da43cb48d1b6" />
 
 ### Observable Analysis
 <img width="945" height="465" alt="IP_analysis" src="https://github.com/user-attachments/assets/35f23967-46dc-48ca-9e5f-20d5e4991588" />
