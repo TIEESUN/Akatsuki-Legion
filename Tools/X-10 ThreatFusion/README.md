@@ -1,8 +1,7 @@
 # X-10 ThreatFusion
 
 **Intelligence Command Platform | 10 Sources. Total Control.**
-
-https://github.com/user-attachments/assets/caf173b8-b1f7-4ce6-8da4-13815a828cb3
+![ec00cb73-9dee-407d-a7e5-4ae0be057591 (1)](https://github.com/user-attachments/assets/268f4fb2-0c8d-430e-ab80-cefdfc07123f)
 
 ## Overview
 
