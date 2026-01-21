@@ -1,0 +1,464 @@
+"""
+Utility functions for Intelligence Aggregator
+"""
+
+import json
+import re
+from typing import Dict, Any, List
+from datetime import datetime
+import hashlib
+
+
+def classify_observable(observable: str) -> str:
+    """Classify observable type"""
+    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", observable):
+        parts = observable.split(".")
+        if all(0 <= int(part) <= 255 for part in parts):
+            return "IP"
+    
+    if re.match(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$", observable, re.IGNORECASE):
+        return "Domain"
+    
+    if re.match(r"^https?://", observable):
+        return "URL"
+    
+    if re.match(r"^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$", observable):
+        length = len(observable)
+        if length == 32:
+            return "MD5"
+        elif length == 40:
+            return "SHA1"
+        elif length == 64:
+            return "SHA256"
+    
+    return "Unknown"
+
+
+def format_timestamp(timestamp: str) -> str:
+    """Format ISO timestamp to readable format"""
+    try:
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        return timestamp
+
+
+def get_threat_level(malicious: int, suspicious: int) -> str:
+    """Determine threat level based on detection counts"""
+    if malicious >= 10:
+        return "🔴 Critical"
+    elif malicious >= 5:
+        return "🟠 High"
+    elif malicious > 0 or suspicious >= 5:
+        return "🟡 Medium"
+    elif suspicious > 0:
+        return "🔵 Low"
+    else:
+        return "🟢 Clean"
+
+
+def get_threat_color(malicious: int, suspicious: int) -> str:
+    """Get color code for threat level"""
+    if malicious >= 10:
+        return "#FF0000"  # Red
+    elif malicious >= 5:
+        return "#FF6600"  # Orange
+    elif malicious > 0 or suspicious >= 5:
+        return "#FFCC00"  # Yellow
+    elif suspicious > 0:
+        return "#0099FF"  # Blue
+    else:
+        return "#00CC00"  # Green
+
+
+def extract_key_findings(results: Dict[str, Any]) -> List[str]:
+    """Extract key findings from analysis results"""
+    findings = []
+    
+    # VirusTotal findings
+    if "VirusTotal" in results and "raw_data" in results["VirusTotal"]:
+        vt = results["VirusTotal"]
+        malicious = vt.get("malicious", 0)
+        suspicious = vt.get("suspicious", 0)
+        
+        if malicious > 0:
+            findings.append(f"⚠️ VirusTotal: {malicious} vendors flagged as malicious")
+        if suspicious > 0:
+            findings.append(f"⚠️ VirusTotal: {suspicious} vendors flagged as suspicious")
+    
+    # Shodan findings
+    if "Shodan" in results and "ports" in results["Shodan"]:
+        shodan = results["Shodan"]
+        ports = shodan.get("ports", [])
+        if ports:
+            findings.append(f"🔌 Shodan: {len(ports)} open ports detected ({', '.join(map(str, ports[:5]))})")
+        if shodan.get("os"):
+            findings.append(f"🖥️ Shodan: OS detected - {shodan['os']}")
+    
+    # OTX findings
+    if "AlienVault OTX" in results and "pulses" in results["AlienVault OTX"]:
+        pulses = results["AlienVault OTX"].get("pulses", [])
+        if pulses:
+            findings.append(f"🚨 OTX: Found in {len(pulses)} threat pulses")
+            if len(pulses) > 0:
+                findings.append(f"   Top threat: {pulses[0].get('name', 'Unknown')}")
+    
+    # AbuseIPDB findings
+    if "AbuseIPDB" in results:
+        abuse = results["AbuseIPDB"]
+        score = abuse.get("abuse_confidence_score", 0)
+        if score > 75:
+            findings.append(f"🚫 AbuseIPDB: High abuse confidence ({score}%)")
+        elif score > 25:
+            findings.append(f"⚠️ AbuseIPDB: Moderate abuse confidence ({score}%)")
+    
+    return findings if findings else ["✅ No major threats detected"]
+
+
+def format_results_for_export(results: Dict[str, Any], observable: str) -> str:
+    """Format results as JSON for export"""
+    export_data = {
+        "query_date": datetime.now().isoformat(),
+        "observable": observable,
+        "observable_type": classify_observable(observable),
+        "results": {}
+    }
+    
+    for source, data in results.items():
+        # Remove raw_data for cleaner export
+        cleaned = {k: v for k, v in data.items() if k != "raw_data"}
+        export_data["results"][source] = cleaned
+    
+    return json.dumps(export_data, indent=2, default=str)
+
+
+def create_summary_report(results: Dict[str, Any], observable: str) -> str:
+    """Create a text summary report"""
+    report = f"""
+================================================================================
+                        INTELLIGENCE AGGREGATOR REPORT
+================================================================================
+
+Observable: {observable}
+Type: {classify_observable(observable)}
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+================================================================================
+                               KEY FINDINGS
+================================================================================
+
+"""
+    
+    findings = extract_key_findings(results)
+    for finding in findings:
+        report += f"\n{finding}"
+    
+    report += "\n\n" + "="*80 + "\n"
+    report += "                            DETAILED RESULTS\n"
+    report += "="*80 + "\n"
+    
+    for source, data in results.items():
+        if "error" not in data:
+            report += f"\n[{source}]\n"
+            report += "-" * 40 + "\n"
+            
+            # Display key data points (skip raw_data and complex objects)
+            for key, value in data.items():
+                if key not in ["raw_data", "pulses", "reports", "services", "urls", "scans", "intelligences"] and value is not None:
+                    if isinstance(value, (str, int, float, bool)):
+                        report += f"  {key.replace('_', ' ').title()}: {value}\n"
+                    elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (str, int)):
+                        report += f"  {key.replace('_', ' ').title()}: {', '.join(map(str, value[:10]))}\n"
+    
+    report += "\n" + "="*80 + "\n"
+    
+    return report
+
+
+def save_report(report: str, filename: str = None) -> str:
+    """Save report to file"""
+    if filename is None:
+        filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    with open(filename, 'w') as f:
+        f.write(report)
+    
+    return filename
+
+
+def get_analytics_data(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract analytics data from results"""
+    analytics = {
+        "sources_queried": len([s for s in results if "error" not in results[s]]),
+        "sources_failed": len([s for s in results if "error" in results[s]]),
+        "malicious_detections": 0,
+        "suspicious_detections": 0,
+        "threat_level": "Clean",
+    }
+    
+    # Aggregate threat data
+    for source, data in results.items():
+        if "malicious" in data:
+            analytics["malicious_detections"] += data.get("malicious", 0)
+        if "suspicious" in data:
+            analytics["suspicious_detections"] += data.get("suspicious", 0)
+    
+    # Determine overall threat level
+    malicious = analytics["malicious_detections"]
+    suspicious = analytics["suspicious_detections"]
+    
+    if malicious >= 10:
+        analytics["threat_level"] = "🔴 Critical"
+    elif malicious >= 5:
+        analytics["threat_level"] = "🟠 High"
+    elif malicious > 0 or suspicious >= 5:
+        analytics["threat_level"] = "🟡 Medium"
+    elif suspicious > 0:
+        analytics["threat_level"] = "🔵 Low"
+    else:
+        analytics["threat_level"] = "🟢 Clean"
+    
+    return analytics
+
+
+# ============================================================================
+# BATCH PROCESSING FUNCTIONS
+# ============================================================================
+
+def parse_indicators_from_file(file_content: str) -> List[str]:
+    """
+    Parse indicators from uploaded file content
+    Handles both .txt and .csv formats
+    """
+    lines = file_content.strip().split('\n')
+    indicators = []
+    
+    for line in lines:
+        # Skip empty lines and comments
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        # Handle CSV format (take first column)
+        if ',' in line:
+            indicator = line.split(',')[0].strip()
+        else:
+            indicator = line
+        
+        # Validate and add
+        if indicator and len(indicator) > 0:
+            indicators.append(indicator)
+    
+    return indicators
+
+
+def validate_batch_indicators(indicators: List[str]) -> tuple:
+    """
+    Validate indicators in batch
+    Returns (valid_indicators, invalid_indicators, summary)
+    """
+    valid = []
+    invalid = []
+    
+    for indicator in indicators:
+        obs_type = classify_observable(indicator)
+        if obs_type != "Unknown":
+            valid.append({
+                "indicator": indicator,
+                "type": obs_type
+            })
+        else:
+            invalid.append({
+                "indicator": indicator,
+                "reason": "Unrecognized format"
+            })
+    
+    summary = {
+        "total": len(indicators),
+        "valid": len(valid),
+        "invalid": len(invalid),
+        "validation_rate": f"{(len(valid) / len(indicators) * 100):.1f}%" if indicators else "0%"
+    }
+    
+    return valid, invalid, summary
+
+
+def get_batch_threat_summary(batch_results: Dict[str, Dict]) -> tuple:
+    """
+    Create summary statistics for batch results
+    Returns (summary_dict, threat_breakdown_dict)
+    """
+    summary = {
+        "total_analyzed": len(batch_results),
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "clean": 0,
+        "errors": 0,
+    }
+    
+    threat_breakdown = {
+        "critical": [],
+        "high": [],
+        "medium": [],
+        "low": [],
+        "clean": [],
+        "error": []
+    }
+    
+    for indicator, result in batch_results.items():
+        # Check if there's an error in any of the sources
+        has_error = all("error" in source_result for source_result in result.values())
+        
+        if has_error:
+            summary["errors"] += 1
+            threat_breakdown["error"].append(indicator)
+        else:
+            # Calculate threat level for this indicator
+            analytics = get_analytics_data(result)
+            threat_level = analytics.get("threat_level", "🟢 Clean")
+            
+            if "🔴 Critical" in threat_level:
+                summary["critical"] += 1
+                threat_breakdown["critical"].append(indicator)
+            elif "🟠 High" in threat_level:
+                summary["high"] += 1
+                threat_breakdown["high"].append(indicator)
+            elif "🟡 Medium" in threat_level:
+                summary["medium"] += 1
+                threat_breakdown["medium"].append(indicator)
+            elif "🔵 Low" in threat_level:
+                summary["low"] += 1
+                threat_breakdown["low"].append(indicator)
+            else:
+                summary["clean"] += 1
+                threat_breakdown["clean"].append(indicator)
+    
+    return summary, threat_breakdown
+
+
+def export_batch_results_json(batch_results: Dict[str, Dict], indicators_metadata: List[Dict]) -> str:
+    """Export batch results as JSON"""
+    export_data = {
+        "export_date": datetime.now().isoformat(),
+        "total_indicators": len(batch_results),
+        "indicators": {}
+    }
+    
+    for indicator, result in batch_results.items():
+        # Get metadata
+        metadata = next((m for m in indicators_metadata if m["indicator"] == indicator), {})
+        
+        # Calculate analytics for this indicator
+        analytics = get_analytics_data(result)
+        
+        export_data["indicators"][indicator] = {
+            "type": metadata.get("type", "Unknown"),
+            "threat_level": analytics.get("threat_level", "Unknown"),
+            "malicious_detections": analytics.get("malicious_detections", 0),
+            "suspicious_detections": analytics.get("suspicious_detections", 0),
+            "sources_queried": analytics.get("sources_queried", 0),
+            "results": {}
+        }
+        
+        # Add individual source results
+        for source, source_data in result.items():
+            cleaned = {k: v for k, v in source_data.items() if k != "raw_data"}
+            export_data["indicators"][indicator]["results"][source] = cleaned
+    
+    return json.dumps(export_data, indent=2, default=str)
+
+
+def export_batch_results_txt(batch_results: Dict[str, Dict], indicators_metadata: List[Dict]) -> str:
+    """Export batch results as comprehensive text report"""
+    report = f"""
+{'='*80}
+                    BATCH INTELLIGENCE AGGREGATOR REPORT
+{'='*80}
+
+Report Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Total Indicators: {len(batch_results)}
+
+{'='*80}
+                              SUMMARY STATISTICS
+{'='*80}
+
+"""
+    
+    summary, threat_breakdown = get_batch_threat_summary(batch_results)
+    
+    report += f"""
+Critical Threats:   {summary['critical']} indicators
+High Threats:       {summary['high']} indicators
+Medium Threats:     {summary['medium']} indicators
+Low Threats:        {summary['low']} indicators
+Clean:              {summary['clean']} indicators
+Errors:             {summary['errors']} indicators
+
+{'='*80}
+                         DETAILED RESULTS BY INDICATOR
+{'='*80}
+
+"""
+    
+    # Add detailed report for each indicator
+    for idx, (indicator, results) in enumerate(batch_results.items(), 1):
+        metadata = next((m for m in indicators_metadata if m["indicator"] == indicator), {})
+        analytics = get_analytics_data(results)
+        
+        report += f"\n{'='*80}\n"
+        report += f"INDICATOR {idx}/{len(batch_results)}: {indicator}\n"
+        report += f"{'='*80}\n\n"
+        report += f"Type: {metadata.get('type', 'Unknown')}\n"
+        report += f"Threat Level: {analytics.get('threat_level', 'Unknown')}\n"
+        report += f"Malicious Detections: {analytics.get('malicious_detections', 0)}\n"
+        report += f"Suspicious Detections: {analytics.get('suspicious_detections', 0)}\n"
+        report += f"Sources Queried: {analytics.get('sources_queried', 0)}\n"
+        report += "\n" + "-"*80 + "\n"
+        report += "KEY FINDINGS:\n"
+        report += "-"*80 + "\n"
+        
+        findings = extract_key_findings(results)
+        for finding in findings:
+            report += f"{finding}\n"
+        
+        report += "\n" + "-"*80 + "\n"
+        report += "DETAILED RESULTS BY SOURCE:\n"
+        report += "-"*80 + "\n\n"
+        
+        # Add results from each source
+        for source, data in results.items():
+            if "error" in data:
+                report += f"[{source}]: ERROR - {data['error']}\n\n"
+            else:
+                report += f"[{source}]\n"
+                for key, value in data.items():
+                    if key not in ["raw_data", "pulses", "reports", "services", "urls", "scans", "intelligences"] and value is not None:
+                        if isinstance(value, (str, int, float, bool)):
+                            report += f"  {key.replace('_', ' ').title()}: {value}\n"
+                        elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (str, int)):
+                            report += f"  {key.replace('_', ' ').title()}: {', '.join(map(str, value[:10]))}\n"
+                report += "\n"
+        
+        report += "\n"
+    
+    report += "="*80 + "\n"
+    report += "END OF BATCH REPORT\n"
+    report += "="*80 + "\n"
+    
+    return report
+
+
+def create_individual_batch_reports(batch_results: Dict[str, Dict], indicators_metadata: List[Dict]) -> Dict[str, str]:
+    """
+    Create individual text reports for each indicator in the batch
+    Returns dict with indicator as key and report text as value
+    """
+    individual_reports = {}
+    
+    for indicator, results in batch_results.items():
+        report = create_summary_report(results, indicator)
+        individual_reports[indicator] = report
+    
+    return individual_reports
