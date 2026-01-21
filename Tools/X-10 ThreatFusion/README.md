@@ -2,7 +2,7 @@
 
 **Intelligence Command Platform | 10 Sources. Total Control.**
 
-![giphy](https://github.com/user-attachments/assets/d5270fb7-6a73-4343-b508-4e5064308c52)
+https://github.com/user-attachments/assets/caf173b8-b1f7-4ce6-8da4-13815a828cb3
 
 ## Overview
 
