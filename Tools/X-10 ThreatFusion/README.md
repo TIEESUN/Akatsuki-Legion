@@ -58,9 +58,9 @@ Contributions welcome! Please open an issue or submit a pull request.
 <img width="1353" height="558" alt="dashboard_2" src="https://github.com/user-attachments/assets/ca786aa6-cf09-4581-ac4e-da43cb48d1b6" />
 
 ### Observable Analysis
-<img width="945" height="465" alt="IP_analysis" src="https://github.com/user-attachments/assets/35f23967-46dc-48ca-9e5f-20d5e4991588" />
-<img width="936" height="484" alt="Ip_analysis2" src="https://github.com/user-attachments/assets/1ed026e2-fd34-4b6e-b511-f441111f555b" />
-<img width="963" height="467" alt="ip_analysis3" src="https://github.com/user-attachments/assets/7b5fa752-b66f-4ddf-8570-eed3c7263fef" />
+<img width="951" height="458" alt="IP_analysis" src="https://github.com/user-attachments/assets/3171eb55-b81b-4612-8b67-5978cf11dc65" />
+<img width="920" height="506" alt="Ip_analysis2" src="https://github.com/user-attachments/assets/50cafb42-c3c1-459b-a012-63109ffca284" />
+<img width="956" height="424" alt="ip_analysis3" src="https://github.com/user-attachments/assets/3e09f35d-bffc-4b97-a5da-8fe0089677ac" />
 
 ### Ransomware Group Tracking
 <img width="976" height="460" alt="TG1" src="https://github.com/user-attachments/assets/0936382d-ec18-4918-84ae-2d37db69448b" />
