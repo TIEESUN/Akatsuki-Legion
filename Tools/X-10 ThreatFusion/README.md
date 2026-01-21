@@ -72,11 +72,12 @@ Contributions welcome! Please open an issue or submit a pull request.
 <img width="967" height="572" alt="TG7" src="https://github.com/user-attachments/assets/583338b0-2457-4fae-9d06-0824c7b0cca2" />
 
 ### Batch Processing
-<img width="1003" height="484" alt="batch1" src="https://github.com/user-attachments/assets/c6461789-817b-41b6-a1c8-e5a14ea2d4cd" />
-<img width="896" height="453" alt="batch2" src="https://github.com/user-attachments/assets/be584fd1-0895-4a55-a721-93e6b7e1e685" />
-<img width="901" height="529" alt="batch3" src="https://github.com/user-attachments/assets/3a85ec25-e5cf-41c6-9445-c0da21ce10d3" />
-<img width="918" height="449" alt="batch4" src="https://github.com/user-attachments/assets/2fc9ccc6-c0f1-4f87-aaf4-5951b5521ebb" />
-<img width="923" height="489" alt="batch5" src="https://github.com/user-attachments/assets/4550ce57-a24a-4e60-af0e-255b34fc9a16" />
+<img width="914" height="524" alt="batch1" src="https://github.com/user-attachments/assets/1bb31f9f-4f00-4a6f-9a00-9f106beb3856" />
+<img width="1061" height="522" alt="batch2" src="https://github.com/user-attachments/assets/e64b0ae7-a3ca-43d9-81a1-2800830fd3ac" />
+<img width="1053" height="523" alt="batch3" src="https://github.com/user-attachments/assets/3a27971d-a7ce-462b-ac88-ae866b93d52d" />
+<img width="960" height="341" alt="batch4" src="https://github.com/user-attachments/assets/19c1e2bd-4c8c-422d-8d84-2f3f397b2371" />
+<img width="981" height="454" alt="batch5" src="https://github.com/user-attachments/assets/a8063039-293c-41d6-bae8-29a29d54a6ea" />
+<img width="985" height="368" alt="batch6" src="https://github.com/user-attachments/assets/fa8bf123-00f8-4ad8-af13-23c496e9ab05" />
 
 ### Export Results
 <img width="956" height="331" alt="final1" src="https://github.com/user-attachments/assets/1f6ab5a9-b6c5-4927-ac11-1047062a0bf0" />
