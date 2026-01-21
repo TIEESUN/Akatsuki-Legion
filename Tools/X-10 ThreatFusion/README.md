@@ -63,12 +63,13 @@ Contributions welcome! Please open an issue or submit a pull request.
 <img width="956" height="424" alt="ip_analysis3" src="https://github.com/user-attachments/assets/3e09f35d-bffc-4b97-a5da-8fe0089677ac" />
 
 ### Ransomware Group Tracking
-<img width="976" height="460" alt="TG1" src="https://github.com/user-attachments/assets/0936382d-ec18-4918-84ae-2d37db69448b" />
-<img width="924" height="503" alt="TG2" src="https://github.com/user-attachments/assets/f7a8b0fc-e1ed-482f-acbf-6701fc647e71" />
-<img width="832" height="345" alt="TG3" src="https://github.com/user-attachments/assets/305c483b-1571-48d0-aff5-c520ecadfa0c" />
-<img width="898" height="395" alt="TG4" src="https://github.com/user-attachments/assets/a783b7cc-e575-42e5-9d73-edbb5120fe8f" />
-<img width="936" height="453" alt="TG5" src="https://github.com/user-attachments/assets/3c318ad1-9a9d-4bc6-b961-efb47518fbba" />
-<img width="996" height="525" alt="TG6" src="https://github.com/user-attachments/assets/68d68a90-2f2e-45c6-8ef1-21c433c5e3c9" />
+<img width="934" height="494" alt="TG1" src="https://github.com/user-attachments/assets/2292853f-4c25-4697-8357-4ce117c3c5a7" />
+<img width="928" height="529" alt="TG2" src="https://github.com/user-attachments/assets/9931cc5c-9cce-41ec-ba75-f025a669d279" />
+<img width="812" height="291" alt="TG3" src="https://github.com/user-attachments/assets/10a720d4-fbda-4567-ae59-89b37ee206db" />
+<img width="860" height="382" alt="TG4" src="https://github.com/user-attachments/assets/8cb0d746-582d-4bf7-9694-945883c4eb82" />
+<img width="910" height="385" alt="TG5" src="https://github.com/user-attachments/assets/cda57742-2e5e-4286-8801-6c02d7e72f4e" />
+<img width="935" height="472" alt="TG6" src="https://github.com/user-attachments/assets/7c8bfe75-0ce6-46f9-a15e-b4e3aa669c99" />
+<img width="967" height="572" alt="TG7" src="https://github.com/user-attachments/assets/583338b0-2457-4fae-9d06-0824c7b0cca2" />
 
 ### Batch Processing
 <img width="1003" height="484" alt="batch1" src="https://github.com/user-attachments/assets/c6461789-817b-41b6-a1c8-e5a14ea2d4cd" />
