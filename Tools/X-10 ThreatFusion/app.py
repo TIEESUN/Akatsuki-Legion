@@ -1,5 +1,5 @@
 """
-X-10 - Main Streamlit Application
+X-10 ThreatFusion - Main Streamlit Application
 Integrates multiple threat intelligence sources into one place
 """
 
@@ -23,24 +23,107 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Apply dark theme CSS
+# Apply dark theme CSS with red/black/white color scheme
 dark_theme_css = """
 <style>
-    /* Dark theme background */
+    /* Dark theme background - Red, Black, White theme */
     :root {
-        --bg-primary: #0a0e27;
-        --bg-secondary: #141829;
-        --bg-tertiary: #1a1f3a;
+        --bg-primary: #0a0a0a;
+        --bg-secondary: #1a1a1a;
+        --bg-tertiary: #252525;
         --text-primary: #ffffff;
-        --text-secondary: #ffeb3b;
-        --accent-red: #ff4757;
-        --accent-orange: #ffa502;
+        --text-secondary: #ff4444;
+        --accent-red: #e63946;
+        --accent-orange: #ff6b35;
         --accent-yellow: #ffd60a;
         --accent-green: #2ecc71;
-        --accent-blue: #3498db;
-        --accent-cyan: #00bcd4;
+        --accent-blue: #ff4444;
+        --accent-cyan: #ff6b6b;
         --accent-purple: #9b59b6;
-        --border-color: #2a3a5a;
+        --border-color: #3a0000;
+    }
+    
+    /* Translucent Akatsuki clouds background */
+    body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: 
+            radial-gradient(ellipse 800px 400px at 20% 30%, rgba(230, 57, 70, 0.08) 0%, transparent 50%),
+            radial-gradient(ellipse 900px 450px at 80% 70%, rgba(230, 57, 70, 0.06) 0%, transparent 50%),
+            radial-gradient(ellipse 700px 350px at 50% 80%, rgba(230, 57, 70, 0.07) 0%, transparent 50%);
+        background-attachment: fixed;
+        pointer-events: none;
+        z-index: -1;
+    }
+    
+    /* SVG cloud patterns - Akatsuki style */
+    .cloud-bg {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: -1;
+        opacity: 0.12;
+    }
+    
+    /* Disable image expand button */
+    img {
+        pointer-events: none !important;
+    }
+    
+    button[title="View fullscreen"] {
+        display: none !important;
+    }
+    
+    [data-testid="stImage"] button {
+        display: none !important;
+    }
+    
+    /* Hide Streamlit header bar */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    header {
+        display: none !important;
+    }
+    
+    /* Remove ALL top padding and margins */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .stApp {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+        padding: 0 !important;
+        top: 0 !important;
+    }
+    
+    /* Remove gap before content */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    
+    /* Target root elements */
+    div[class*="stVerticalBlock"] {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    
+    /* Remove toolbar space */
+    .main .block-container {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
     }
     
     * {
@@ -1030,12 +1113,17 @@ def display_threat_group_results(results: Dict[str, Any], threat_group: str):
 
 def display_header():
     """Display application header with CTI professional branding"""
+    # Display logo as main header - full width, enlarged, no expand button
+    st.image(".streamlit/x10_logo.jpeg", use_column_width=True, output_format="JPEG")
+    
+    st.markdown("---")
+    
+    # Stats columns below logo
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
         st.markdown("""
-        # <span style='color: #00D4FF; text-shadow: 0 0 10px #00D4FF;'>🔐 X-10 ThreatFusion</span>
-        ### <span style='color: #FF6B35; font-weight: bold;'>Intelligence Command Platform</span>
+        ### <span style='color: #ff4444; font-weight: bold;'>Intelligence Command Platform</span>
         """, unsafe_allow_html=True)
         st.markdown("""
         **Real-time threat intelligence aggregation across 10 premium intelligence sources**
@@ -2149,7 +2237,7 @@ def main():
     # Sidebar Navigation & Info
     with st.sidebar:
         # Brand section with CTI professional styling
-        st.markdown("### <span style='color: #00D4FF; font-weight: bold; text-shadow: 0 0 8px #00D4FF;'>🔐 X-10 ThreatFusion</span>", unsafe_allow_html=True)
+        st.markdown("### <span style='color: #e63946; font-weight: bold; text-shadow: 0 0 10px #e63946;'>🔐 X-10 ThreatFusion</span>", unsafe_allow_html=True)
         st.markdown("**Intelligence Command Platform**")
         st.markdown("---")
         
@@ -2181,7 +2269,7 @@ def main():
         # About section
         with st.expander("📖 About Platform", expanded=False):
             st.markdown("""
-            # <span style='color: #00D4FF; font-weight: bold;'>X-10 ThreatFusion</span>
+            # <span style='color: #e63946; font-weight: bold;'>X-10 ThreatFusion</span>
             
             Unified platform for threat intelligence correlation across 10 premium threat intelligence sources.
             
