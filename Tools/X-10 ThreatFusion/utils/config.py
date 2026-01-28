@@ -35,6 +35,12 @@ class ConfigMeta(type):
             return os.getenv("GETIPINTEL_CONTACT", "")
         elif name == "RANSOMWARE_LIVE_API_KEY":
             return os.getenv("RANSOMWARE_LIVE_API_KEY", "")
+        elif name == "HUNTER_API_KEY":
+            return os.getenv("HUNTER_API_KEY", "")
+        elif name == "MALWARE_BAZAAR_API_KEY":
+            return os.getenv("MALWARE_BAZAAR_API_KEY", "")
+        elif name == "THREATFOX_API_KEY":
+            return os.getenv("THREATFOX_API_KEY", "")
         elif name == "REQUEST_TIMEOUT":
             return int(os.getenv("REQUEST_TIMEOUT", "10"))
         elif name == "CACHE_ENABLED":
@@ -50,6 +56,23 @@ class Config(metaclass=ConfigMeta):
     PAGE_TITLE = "Intelligence Aggregator"
     PAGE_ICON = "🔍"
     LAYOUT = "wide"
+
+    # Supported intelligence sources - update when adding new integrations
+    SUPPORTED_INTELLIGENCE_SOURCES = [
+        "VirusTotal",
+        "Shodan",
+        "AlienVault OTX",
+        "IPInfo",
+        "AbuseIPDB",
+        "URLscan",
+        "URLhaus",
+        "IP Detective",
+        "GetIPIntel",
+        "Ransomware.live",
+        "Hunter.io",
+        "Malware Bazaar",
+        "ThreatFox",
+    ]
     
     @classmethod
     def get_active_apis(cls) -> dict:
@@ -80,6 +103,12 @@ class Config(metaclass=ConfigMeta):
         
         if os.getenv("RANSOMWARE_LIVE_API_KEY", ""):
             apis["Ransomware.live"] = True
+        if os.getenv("HUNTER_API_KEY", ""):
+            apis["Hunter.io"] = True
+        if os.getenv("MALWARE_BAZAAR_API_KEY", ""):
+            apis["Malware Bazaar"] = True
+        if os.getenv("THREATFOX_API_KEY", ""):
+            apis["ThreatFox"] = True
         
         return apis
     
@@ -97,6 +126,9 @@ class Config(metaclass=ConfigMeta):
             "IPDETECTIVE_API_KEY": "✅" if os.getenv("IPDETECTIVE_API_KEY", "") else "❌",
             "GETIPINTEL_CONTACT": "✅" if os.getenv("GETIPINTEL_CONTACT", "") else "❌",
             "RANSOMWARE_LIVE_API_KEY": "✅" if os.getenv("RANSOMWARE_LIVE_API_KEY", "") else "❌",
+            "HUNTER_API_KEY": "✅" if os.getenv("HUNTER_API_KEY", "") else "❌",
+            "MALWARE_BAZAAR_API_KEY": "✅" if os.getenv("MALWARE_BAZAAR_API_KEY", "") else "❌",
+            "THREATFOX_API_KEY": "✅" if os.getenv("THREATFOX_API_KEY", "") else "❌",
         }
         return debug_info
     
