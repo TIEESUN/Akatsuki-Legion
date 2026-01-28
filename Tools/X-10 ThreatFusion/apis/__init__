@@ -12,6 +12,9 @@ from .urlscan import URLscanAPI
 from .ipdetective import IPDetectiveAPI
 from .getipintel import GetIPIntelAPI
 from .ransomware_live import RansomwareLiveAPI
+from .hunter import HunterAPI
+from .malware_bazaar import MalwareBazaarAPI
+from .threatfox import ThreatFoxAPI
 
 __all__ = [
     "VirusTotalAPI",
@@ -24,4 +27,7 @@ __all__ = [
     "IPDetectiveAPI",
     "GetIPIntelAPI",
     "RansomwareLiveAPI",
+    "HunterAPI",
+    "MalwareBazaarAPI",
+    "ThreatFoxAPI",
 ]
