@@ -4,13 +4,67 @@ Utility functions for Intelligence Aggregator
 
 import json
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
 import hashlib
 
 
+def parse_ip_port(observable: str) -> Tuple[str, Optional[int], bool]:
+    """
+    Parse IP:port format from observable
+    
+    Args:
+        observable: Observable string (e.g., "192.168.1.1:443" or "192.168.1.1")
+        
+    Returns:
+        Tuple of (ip_or_observable, port_number or None, has_port_specified)
+        
+    Example:
+        parse_ip_port("139.180.203.104:443") -> ("139.180.203.104", 443, True)
+        parse_ip_port("139.180.203.104") -> ("139.180.203.104", None, False)
+    """
+    # Check if observable contains a colon (potential port)
+    if ":" in observable:
+        parts = observable.rsplit(":", 1)  # Split from right to handle IPv6 if needed
+        potential_ip = parts[0]
+        potential_port = parts[1]
+        
+        # Validate that second part is a port number
+        try:
+            port_num = int(potential_port)
+            if 0 <= port_num <= 65535:
+                # Validate that first part is an IP
+                if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", potential_ip):
+                    ip_parts = potential_ip.split(".")
+                    if all(0 <= int(part) <= 255 for part in ip_parts):
+                        return (potential_ip, port_num, True)
+        except (ValueError, TypeError):
+            pass
+    
+    # No valid port found, return original observable
+    return (observable, None, False)
+
+
 def classify_observable(observable: str) -> str:
-    """Classify observable type"""
+    """Classify observable type (handles IP, IP:port, domain, URL, hash)"""
+    # Check for IP:port format first
+    if ":" in observable:
+        parts = observable.rsplit(":", 1)
+        potential_ip = parts[0]
+        potential_port = parts[1]
+        
+        try:
+            port_num = int(potential_port)
+            if 0 <= port_num <= 65535:
+                # Validate IP
+                if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", potential_ip):
+                    ip_parts = potential_ip.split(".")
+                    if all(0 <= int(part) <= 255 for part in ip_parts):
+                        return "IP:Port"
+        except (ValueError, TypeError):
+            pass
+    
+    # Check for plain IP
     if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", observable):
         parts = observable.split(".")
         if all(0 <= int(part) <= 255 for part in parts):
@@ -111,6 +165,93 @@ def extract_key_findings(results: Dict[str, Any]) -> List[str]:
             findings.append(f"🚫 AbuseIPDB: High abuse confidence ({score}%)")
         elif score > 25:
             findings.append(f"⚠️ AbuseIPDB: Moderate abuse confidence ({score}%)")
+
+    # Hunter.io findings
+    if "Hunter.io" in results:
+        hunter = results["Hunter.io"]
+        
+        # Email findings for domain search
+        if hunter.get("type") == "domain":
+            emails_found = hunter.get("emails_found", 0)
+            if emails_found > 0:
+                findings.append(f"📧 Hunter.io: {emails_found} emails discovered for domain")
+            
+            # Company identification
+            company_info = hunter.get("company_info", {})
+            if company_info and "name" in company_info:
+                findings.append(f"🏢 Hunter.io: Company identified - {company_info.get('name')}")
+        
+        # Email verification findings
+        elif hunter.get("type") == "email":
+            verification = hunter.get("verification", {})
+            status = verification.get("status", "")
+            if status == "valid":
+                findings.append(f"✅ Hunter.io: Email address is valid and deliverable")
+            elif status == "invalid":
+                findings.append(f"❌ Hunter.io: Email address is invalid")
+            
+            # Person enrichment
+            person_info = hunter.get("person", {})
+            if person_info and "first_name" in person_info:
+                name = f"{person_info.get('first_name', '')} {person_info.get('last_name', '')}".strip()
+                if name:
+                    findings.append(f"👤 Hunter.io: Person identified - {name}")
+
+    # Malware Bazaar findings
+    if "Malware Bazaar" in results:
+        mb = results["Malware Bazaar"]
+        
+        # Malware detected
+        if mb.get("query_status") == "ok" and mb.get("type") == "hash":
+            if mb.get("signature"):
+                findings.append(f"🦠 Malware Bazaar: MALWARE DETECTED - {mb.get('signature')}")
+            
+            tags = mb.get("tags", [])
+            if tags and isinstance(tags, list):
+                findings.append(f"🏷️ Malware Bazaar: Tags - {', '.join(tags[:5])}")
+            
+            # Intelligence data
+            intelligence = mb.get("intelligence", {})
+            if intelligence:
+                if intelligence.get("clamav"):
+                    findings.append(f"🔴 Malware Bazaar: ClamAV Signature - {intelligence.get('clamav')}")
+                downloads = intelligence.get("downloads")
+                if downloads and int(downloads) > 0:
+                    findings.append(f"📥 Malware Bazaar: {downloads} downloads from MalwareBazaar")
+        
+        # Sample collections found
+        elif mb.get("type") in ["tag_query", "signature_query"]:
+            sample_count = mb.get("sample_count", 0)
+            query_type = "tag" if mb.get("type") == "tag_query" else "signature"
+            if sample_count > 0:
+                findings.append(f"📋 Malware Bazaar: {sample_count} malware samples found for {query_type} '{mb.get('observable')}'")
+    
+    # ThreatFox findings
+    if "ThreatFox" in results:
+        tf = results["ThreatFox"]
+        
+        if tf.get("query_status") == "ok" and tf.get("ioc_count", 0) > 0:
+            iocs = tf.get("iocs", [])
+            
+            # Check for malware-related IOCs
+            malware_iocs = [ioc for ioc in iocs if ioc.get("malware")]
+            if malware_iocs:
+                malware_families = set(ioc.get("malware_printable", ioc.get("malware")) for ioc in malware_iocs)
+                findings.append(f"⚠️ ThreatFox: {len(malware_families)} malware families detected - {', '.join(list(malware_families)[:3])}")
+            
+            # Check for botnet C&C servers
+            botnet_iocs = [ioc for ioc in iocs if ioc.get("threat_type") == "botnet_cc"]
+            if botnet_iocs:
+                findings.append(f"🤖 ThreatFox: {len(botnet_iocs)} botnet C&C server(s) detected")
+            
+            # Check for phishing
+            phishing_iocs = [ioc for ioc in iocs if ioc.get("threat_type") == "phishing"]
+            if phishing_iocs:
+                findings.append(f"🎣 ThreatFox: {len(phishing_iocs)} phishing IOC(s) detected")
+            
+            # Overall IOC count
+            if tf.get("ioc_count", 0) > 0 and not malware_iocs and not botnet_iocs and not phishing_iocs:
+                findings.append(f"🔍 ThreatFox: {tf.get('ioc_count')} IOC(s) found in threat intelligence")
     
     return findings if findings else ["✅ No major threats detected"]
 
