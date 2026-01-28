@@ -1,5 +1,5 @@
 """
-X-10 ThreatFusion - Main Streamlit Application
+Intelligence Aggregator - Main Streamlit Application
 Integrates multiple threat intelligence sources into one place
 """
 
@@ -14,6 +14,7 @@ from typing import Dict, Any, List
 import logging
 from datetime import datetime
 import time
+import re
 
 # Configure Streamlit page
 st.set_page_config(
@@ -349,7 +350,13 @@ dark_theme_css = """
     .dataframe {
         background-color: var(--bg-tertiary) !important;
     }
-    
+
+    /* Make summary/report areas horizontally scrollable */
+    .report-wrapper {
+        overflow-x: auto;
+        width: 100%;
+    }
+
     table {
         border-collapse: collapse;
         width: 100%;
@@ -413,6 +420,9 @@ from apis import (
     IPDetectiveAPI,
     GetIPIntelAPI,
     RansomwareLiveAPI,
+    HunterAPI,
+    MalwareBazaarAPI,
+    ThreatFoxAPI,
 )
 from utils import (
     Config,
@@ -454,10 +464,23 @@ def initialize_session_state():
 def run_analysis(observable: str, selected_sources: list) -> Dict[str, Any]:
     """
     Run analysis across selected sources with bidirectional correlation
+    Handles IP:port format by passing full format to ThreatFox, IP-only to other sources
     """
+    from utils.helpers import parse_ip_port
+    
     results = {}
     clients = get_api_clients()
     identified_groups = set()
+    
+    # Parse IP:port format if present
+    base_observable, port_number, has_port = parse_ip_port(observable)
+    
+    # Track if we're missing port for ThreatFox
+    missing_port_for_threatfox = False
+    if not has_port and re.match(r"^(\d{1,3}\.){3}\d{1,3}$", base_observable):
+        ip_parts = base_observable.split(".")
+        if all(0 <= int(part) <= 255 for part in ip_parts):
+            missing_port_for_threatfox = True
     
     # Phase 1: Initial analysis across all sources
     for source_name, client in clients.items():
@@ -465,7 +488,23 @@ def run_analysis(observable: str, selected_sources: list) -> Dict[str, Any]:
             continue
         
         try:
-            result = client.analyze(observable)
+            # ThreatFox needs full IP:port format, others need just the base observable
+            if source_name == "ThreatFox":
+                if missing_port_for_threatfox:
+                    # Skip ThreatFox if we have just an IP
+                    results[source_name] = {
+                        "query_status": "skipped",
+                        "message": "⚠️ ThreatFox requires IP:port format (e.g., 139.180.203.104:443). Please include the port number for ThreatFox results.",
+                        "source": "ThreatFox"
+                    }
+                    continue
+                else:
+                    # Pass full observable (with port) to ThreatFox
+                    result = client.analyze(observable)
+            else:
+                # Pass base observable (without port) to other sources
+                result = client.analyze(base_observable)
+            
             results[source_name] = result
             
             # Extract group names if identified by this source
@@ -1125,8 +1164,9 @@ def display_header():
         st.markdown("""
         ### <span style='color: #ff4444; font-weight: bold;'>Intelligence Command Platform</span>
         """, unsafe_allow_html=True)
-        st.markdown("""
-        **Real-time threat intelligence aggregation across 10 premium intelligence sources**
+        total_supported = len(Config.SUPPORTED_INTELLIGENCE_SOURCES)
+        st.markdown(f"""
+        **Real-time threat intelligence aggregation across {total_supported} premium intelligence sources**
         
         🎯 **Designed for:** Security Operations Centers (SOCs) | Threat Analysts | Incident Response Teams
         """)
@@ -1141,7 +1181,7 @@ def display_header():
     
     with col3:
         active_apis = Config.get_active_apis()
-        st.metric("Intelligence Sources", f"{len(active_apis)}/10", delta=None)
+        st.metric("Intelligence Sources", f"{len(active_apis)}/{len(Config.SUPPORTED_INTELLIGENCE_SOURCES)}", delta=None)
         st.metric("Status", "🟢 LIVE", delta=None)
     
     st.markdown("---")
@@ -1164,8 +1204,8 @@ def display_single_input():
         if input_type == "Observable (IP/Domain/Hash)":
             observable = st.text_input(
                 "🔎 Enter Indicator (Observable):",
-                placeholder="e.g., 8.8.8.8 or malware.com",
-                help="IPv4 address | Domain | URL | File hash (MD5/SHA1/SHA256)",
+                placeholder="e.g., 8.8.8.8 or malware.com or 139.180.203.104:443",
+                help="IPv4 address | Domain | URL | File hash (MD5/SHA1/SHA256) | IP:port (e.g., 192.168.1.1:443 for ThreatFox)",
             )
             threat_group = None
         else:
@@ -1229,7 +1269,7 @@ def display_source_selection():
     """Display source selection checkboxes"""
     st.markdown("**🔗 Select Intelligence Sources to Query:**")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     
     with col1:
@@ -1245,10 +1285,15 @@ def display_source_selection():
     with col3:
         urlhaus = st.checkbox("URLhaus", value=bool(Config.URLHAUS_API_KEY), disabled=not Config.URLHAUS_API_KEY)
         ipdetective = st.checkbox("IP Detective", value=bool(Config.IPDETECTIVE_API_KEY), disabled=not Config.IPDETECTIVE_API_KEY)
+        hunter = st.checkbox("Hunter.io", value=bool(Config.HUNTER_API_KEY), disabled=not Config.HUNTER_API_KEY)
     
     with col4:
         getipintel = st.checkbox("GetIPIntel", value=bool(Config.GETIPINTEL_CONTACT), disabled=not Config.GETIPINTEL_CONTACT)
         ransomware_live = st.checkbox("Ransomware.live", value=bool(Config.RANSOMWARE_LIVE_API_KEY), disabled=not Config.RANSOMWARE_LIVE_API_KEY)
+        malware_bazaar = st.checkbox("Malware Bazaar", value=bool(Config.MALWARE_BAZAAR_API_KEY), disabled=not Config.MALWARE_BAZAAR_API_KEY)
+    
+    with col5:
+        threatfox = st.checkbox("ThreatFox", value=bool(Config.THREATFOX_API_KEY), disabled=not Config.THREATFOX_API_KEY)
     
     selected_sources = []
     if vt:
@@ -1267,10 +1312,16 @@ def display_source_selection():
         selected_sources.append("URLhaus")
     if ipdetective:
         selected_sources.append("IP Detective")
+    if hunter:
+        selected_sources.append("Hunter.io")
     if getipintel:
         selected_sources.append("GetIPIntel")
     if ransomware_live:
         selected_sources.append("Ransomware.live")
+    if malware_bazaar:
+        selected_sources.append("Malware Bazaar")
+    if threatfox:
+        selected_sources.append("ThreatFox")
     
     return selected_sources
 
@@ -1894,41 +1945,487 @@ def display_urlscan_results(data: Dict[str, Any]):
     
     # Display scan results
     scan_count = data.get("scan_count", 0)
-    st.write(f"**Total Scans:** {scan_count}")
-    
-    scans = data.get("scans", [])
-    if scans:
-        st.write("**Recent Scans:**")
+    if scan_count > 0:
+        st.write(f"**Detections:** {scan_count}")
         
-        for idx, scan in enumerate(scans[:5], 1):
-            with st.expander(f"🔗 Scan {idx} - {scan.get('url', scan.get('domain', 'N/A'))}"):
+        # Display threats
+        threats = data.get("threats", [])
+        if threats:
+            with st.expander("View Threats", expanded=False):
+                for threat in threats:
+                    st.warning(f"**{threat.get('engine')}**: {threat.get('result')}")
+        
+        # Display verdicts
+        verdicts = data.get("verdicts", {})
+        if verdicts:
+            st.write("**Verdicts:**")
+            for engine, verdict in verdicts.items():
+                st.write(f"- {engine}: {verdict}")
+
+
+def display_hunter_results(data: Dict[str, Any]):
+    """Display Hunter.io results (email and domain intelligence)"""
+    st.subheader("🎯 Hunter.io Results")
+
+    if not data:
+        st.info("ℹ️ No Hunter.io data available")
+        return
+
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+
+    # Domain search results
+    if data.get("type") == "domain":
+        st.write(f"**Domain:** {data.get('observable')}")
+
+        # Company information
+        company_info = data.get("company_info", {})
+        if company_info and "error" not in str(company_info):
+            with st.expander("Company Information", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if "name" in company_info:
+                        st.write(f"**Name:** {company_info.get('name')}")
+                    if "description" in company_info:
+                        st.write(f"**Description:** {company_info.get('description')}")
+                    if "industry" in company_info:
+                        st.write(f"**Industry:** {company_info.get('industry')}")
+                    if "size" in company_info:
+                        st.write(f"**Size:** {company_info.get('size')}")
+                with col2:
+                    if "location" in company_info:
+                        st.write(f"**Location:** {company_info.get('location')}")
+                    if "founded" in company_info:
+                        st.write(f"**Founded:** {company_info.get('founded')}")
+                    if "logo" in company_info:
+                        st.image(company_info.get('logo'), width=150)
+
+        # Email count summary
+        email_count = data.get("email_count", {})
+        if email_count and "error" not in str(email_count):
+            with st.expander("Email Count Summary", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Emails", email_count.get("total", 0))
+                with col2:
+                    st.metric("Personal", email_count.get("personal", 0))
+                with col3:
+                    st.metric("Generic", email_count.get("generic", 0))
+
+        # Discovered emails
+        emails = data.get("emails", [])
+        if emails:
+            st.info(f"✉️ {len(emails)} emails discovered")
+            with st.expander("View Emails", expanded=False):
+                email_df = pd.DataFrame([
+                    {
+                        "Email": e.get("value") if isinstance(e, dict) else e,
+                        "First Name": e.get("first_name", "") if isinstance(e, dict) else "",
+                        "Last Name": e.get("last_name", "") if isinstance(e, dict) else "",
+                        "Title": e.get("position", "") if isinstance(e, dict) else "",
+                        "Confidence": f"{e.get('confidence', 0)}%" if isinstance(e, dict) else ""
+                    }
+                    for e in emails[:200]
+                ])
+                st.dataframe(email_df, use_container_width=True)
+
+    # Email verification/enrichment results
+    elif data.get("type") == "email":
+        st.write(f"**Email:** {data.get('observable')}")
+
+        # Email verification status
+        verification = data.get("verification", {})
+        if verification and "error" not in str(verification):
+            status = verification.get("status", "unknown")
+            color = "🟢" if status == "valid" else "🔴" if status == "invalid" else "🟡"
+            st.write(f"{color} **Verification Status:** {status}")
+            if "score" in verification:
+                st.write(f"**Confidence Score:** {verification.get('score')}/100")
+
+        # Person information
+        person_info = data.get("person", {})
+        if person_info and "error" not in str(person_info):
+            with st.expander("Person Information", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if "first_name" in person_info:
+                        st.write(f"**First Name:** {person_info.get('first_name')}")
+                    if "last_name" in person_info:
+                        st.write(f"**Last Name:** {person_info.get('last_name')}")
+                    if "title" in person_info:
+                        st.write(f"**Title:** {person_info.get('title')}")
+                with col2:
+                    if "company" in person_info:
+                        st.write(f"**Company:** {person_info.get('company')}")
+                    if "location" in person_info:
+                        st.write(f"**Location:** {person_info.get('location')}")
+                    if "linkedin_url" in person_info:
+                        st.markdown(f"**LinkedIn:** [{person_info.get('linkedin_url')}]({person_info.get('linkedin_url')})")
+
+        # Company information from person
+        company_info = data.get("company", {})
+        if company_info and "error" not in str(company_info):
+            with st.expander("Company Information", expanded=False):
+                if "name" in company_info:
+                    st.write(f"**Name:** {company_info.get('name')}")
+                if "industry" in company_info:
+                    st.write(f"**Industry:** {company_info.get('industry')}")
+                if "size" in company_info:
+                    st.write(f"**Size:** {company_info.get('size')}")
+
+    # Raw data viewer - filtered to show only useful data
+    if data.get("raw_data"):
+        raw_data = data.get("raw_data", {})
+        # Filter out empty objects and errors
+        filtered_raw = {}
+        for key, value in raw_data.items():
+            if value and isinstance(value, dict):
+                # Remove null/empty values from each section
+                clean_value = {k: v for k, v in value.items() if v}
+                if clean_value:
+                    filtered_raw[key] = clean_value
+            elif value:
+                filtered_raw[key] = value
+        
+        if filtered_raw:
+            with st.expander("Raw Data (Hunter.io)", expanded=False):
+                st.code(str(filtered_raw), language="json")
+        else:
+            with st.expander("Raw Data (Hunter.io)", expanded=False):
+                st.info("No additional data available from Hunter.io")
+    else:
+        with st.expander("Raw Data (Hunter.io)", expanded=False):
+            st.info("No data returned from Hunter.io API")
+
+
+def display_malware_bazaar_results(data: Dict[str, Any]):
+    """Display Malware Bazaar results (malware analysis and threat intelligence)"""
+    st.subheader("🦠 Malware Bazaar Results")
+
+    if not data:
+        st.info("ℹ️ No Malware Bazaar data available")
+        return
+
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+
+    # Hash query results
+    if data.get("type") == "hash":
+        query_status = data.get("query_status", "")
+        
+        if query_status == "ok":
+            st.success("✅ Malware sample found in Malware Bazaar!")
+            
+            # Basic file information
+            with st.expander("File Information", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if data.get("file_name"):
+                        st.write(f"**File Name:** {data.get('file_name')}")
+                    if data.get("file_size"):
+                        st.write(f"**File Size:** {data.get('file_size')} bytes")
+                    if data.get("file_type"):
+                        st.write(f"**File Type:** {data.get('file_type')}")
+                    if data.get("file_format"):
+                        st.write(f"**File Format:** {data.get('file_format')}")
+                with col2:
+                    if data.get("file_arch"):
+                        st.write(f"**Architecture:** {data.get('file_arch')}")
+                    if data.get("file_type_mime"):
+                        st.write(f"**MIME Type:** {data.get('file_type_mime')}")
+                    if data.get("magika"):
+                        st.write(f"**Magika (AI Detection):** {data.get('magika')}")
+
+            # Hashes
+            with st.expander("File Hashes", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if data.get("sha256"):
+                        st.code(data.get("sha256"), language="text")
+                    if data.get("md5"):
+                        st.code(data.get("md5"), language="text")
+                with col2:
+                    if data.get("sha1"):
+                        st.code(data.get("sha1"), language="text")
+                    if data.get("sha3_384"):
+                        st.code(data.get("sha3_384"), language="text")
+
+            # Malware family and signatures
+            if data.get("signature"):
+                st.warning(f"🔴 **Malware Family:** {data.get('signature')}")
+            
+            if data.get("tags"):
+                tags = data.get("tags", [])
+                st.info(f"📋 **Tags:** {', '.join(tags) if isinstance(tags, list) else tags}")
+
+            # Temporal information
+            with st.expander("Temporal Information", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if data.get("first_seen"):
+                        st.write(f"**First Seen:** {data.get('first_seen')}")
+                with col2:
+                    if data.get("last_seen"):
+                        st.write(f"**Last Seen:** {data.get('last_seen')}")
+
+            # Submission info
+            with st.expander("Submission Information", expanded=False):
+                if data.get("reporter"):
+                    st.write(f"**Reported By:** {data.get('reporter')}")
+                if data.get("delivery_method"):
+                    st.write(f"**Delivery Method:** {data.get('delivery_method')}")
+
+            # Hash signatures (SSDEEP, TLSH, etc)
+            with st.expander("Similarity Hashes", expanded=False):
+                if data.get("imphash"):
+                    st.write(f"**Import Hash (imphash):** `{data.get('imphash')}`")
+                if data.get("tlsh"):
+                    st.write(f"**TLSH Hash:** `{data.get('tlsh')}`")
+                if data.get("telfhash"):
+                    st.write(f"**Telfhash:** `{data.get('telfhash')}`")
+                if data.get("gimphash"):
+                    st.write(f"**Gimphash:** `{data.get('gimphash')}`")
+                if data.get("ssdeep"):
+                    st.write(f"**SSDEEP:** `{data.get('ssdeep')}`")
+                if data.get("dhash_icon"):
+                    st.write(f"**Icon DHash:** `{data.get('dhash_icon')}`")
+                if data.get("trid"):
+                    st.write(f"**TrID:** {data.get('trid')}")
+
+            # Intelligence data
+            intelligence = data.get("intelligence", {})
+            if intelligence and isinstance(intelligence, dict):
+                with st.expander("Threat Intelligence", expanded=True):
+                    if intelligence.get("clamav"):
+                        st.write(f"**ClamAV Detection:** {intelligence.get('clamav')}")
+                    if intelligence.get("downloads"):
+                        st.metric("Downloads from MalwareBazaar", intelligence.get("downloads"))
+                    if intelligence.get("uploads"):
+                        st.metric("Uploads to MalwareBazaar", intelligence.get("uploads"))
+                    if intelligence.get("mail"):
+                        st.write(f"**Mail Intelligence:** {intelligence.get('mail')}")
+
+            # Code signing information
+            if data.get("code_sign"):
+                with st.expander("Code Signing Information", expanded=False):
+                    cert = data.get("code_sign", {})
+                    if isinstance(cert, dict):
+                        if cert.get("subject_cn"):
+                            st.write(f"**Subject CN:** {cert.get('subject_cn')}")
+                        if cert.get("issuer_cn"):
+                            st.write(f"**Issuer CN:** {cert.get('issuer_cn')}")
+                        if cert.get("valid_from"):
+                            st.write(f"**Valid From:** {cert.get('valid_from')}")
+                        if cert.get("valid_to"):
+                            st.write(f"**Valid To:** {cert.get('valid_to')}")
+
+            # YARA rules
+            yara_rules = data.get("yara_rules", [])
+            if yara_rules and isinstance(yara_rules, list):
+                with st.expander(f"YARA Rules ({len(yara_rules)})", expanded=False):
+                    for rule in yara_rules[:50]:
+                        if isinstance(rule, dict):
+                            st.write(f"**{rule.get('rule_name')}** - {rule.get('author')}")
+                            st.write(f"__{rule.get('description')}__")
+                        else:
+                            st.write(rule)
+
+            # Comments
+            comments = data.get("comments", [])
+            if comments and isinstance(comments, list):
+                with st.expander(f"Community Comments ({len(comments)})", expanded=False):
+                    for comment in comments[:20]:
+                        if isinstance(comment, dict):
+                            st.write(f"**{comment.get('display_name')}** ({comment.get('date_added')})")
+                            st.write(f"_{comment.get('comment')}_")
+                        else:
+                            st.write(comment)
+        else:
+            st.warning(f"⚠️ Query Status: {query_status}")
+
+    # Tag or Signature query results
+    elif data.get("type") in ["tag_query", "signature_query"]:
+        query_type = "Tag" if data.get("type") == "tag_query" else "Signature"
+        
+        sample_count = data.get("sample_count", 0)
+        st.info(f"🔍 Found {sample_count} malware samples for {query_type.lower()}: **{data.get('observable')}**")
+        
+        if data.get("samples") and isinstance(data.get("samples"), list):
+            with st.expander(f"View Samples (showing first 100)", expanded=False):
+                samples_df = pd.DataFrame([
+                    {
+                        "File Name": s.get("file_name", ""),
+                        "MD5": s.get("md5_hash", "")[:16] + "...",
+                        "File Type": s.get("file_type", ""),
+                        "Signature": s.get("signature", ""),
+                        "First Seen": s.get("first_seen", ""),
+                    }
+                    for s in data.get("samples", [])[:100]
+                ])
+                st.dataframe(samples_df, use_container_width=True)
+
+    # Raw data viewer
+    if data.get("raw_data"):
+        raw_data = data.get("raw_data", {})
+        filtered_raw = {}
+        for key, value in raw_data.items():
+            if value and isinstance(value, dict):
+                clean_value = {k: v for k, v in value.items() if v}
+                if clean_value:
+                    filtered_raw[key] = clean_value
+            elif value:
+                filtered_raw[key] = value
+        
+        if filtered_raw:
+            with st.expander("Raw Data (Malware Bazaar)", expanded=False):
+                st.code(str(filtered_raw), language="json")
+        else:
+            with st.expander("Raw Data (Malware Bazaar)", expanded=False):
+                st.info("No additional data available from Malware Bazaar")
+    else:
+        with st.expander("Raw Data (Malware Bazaar)", expanded=False):
+            st.info("No data returned from Malware Bazaar API")
+
+
+def display_threatfox_results(data: Dict[str, Any]):
+    """Display ThreatFox results (IOC threat intelligence)"""
+    st.subheader("🔍 ThreatFox Results")
+
+    if not data:
+        st.info("ℹ️ No ThreatFox data available")
+        return
+
+    # Handle skipped status (missing port for IP)
+    if data.get("query_status") == "skipped":
+        st.warning(f"⚠️ {data.get('message', 'ThreatFox query was skipped')}")
+        return
+
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+
+    query_status = data.get("query_status", "")
+    ioc_count = data.get("ioc_count", 0)
+
+    if query_status == "ok":
+        if ioc_count == 0:
+            st.info("ℹ️ No IOCs found in ThreatFox database")
+            return
+
+        st.success(f"✅ Found {ioc_count} IOC(s) in ThreatFox!")
+
+        iocs = data.get("iocs", [])
+
+        # Display individual IOC details
+        for idx, ioc in enumerate(iocs, 1):
+            with st.expander(f"📌 IOC {idx}: {ioc.get('ioc', 'N/A')}", expanded=True if idx == 1 else False):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write(f"**URL:** {scan.get('url')}")
-                    st.write(f"**Domain:** {scan.get('domain')}")
-                    st.write(f"**IP:** {scan.get('ip')}")
-                    st.write(f"**Country:** {scan.get('country')}")
-                
+                    st.write(f"**IOC:** `{ioc.get('ioc')}`")
+                    st.write(f"**IOC Type:** {ioc.get('ioc_type_desc', ioc.get('ioc_type', 'N/A'))}")
+                    st.write(f"**Threat Type:** {ioc.get('threat_type_desc', ioc.get('threat_type', 'N/A'))}")
+                    
                 with col2:
-                    st.write(f"**ASN:** {scan.get('asn')}")
-                    st.write(f"**ASN Name:** {scan.get('asnname')}")
-                    st.write(f"**Timestamp:** {scan.get('timestamp')}")
+                    st.write(f"**ID:** {ioc.get('id')}")
+                    st.write(f"**Confidence:** {ioc.get('confidence_level', 'N/A')}%")
+                    st.write(f"**Reporter:** {ioc.get('reporter', 'N/A')}")
                 
-                # Threat statistics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Malicious", scan.get("malicious", 0))
-                with col2:
-                    st.metric("Suspicious", scan.get("suspicious", 0))
-                with col3:
-                    st.metric("Unspecified", scan.get("unspecified", 0))
+                # Malware information
+                if ioc.get("malware"):
+                    st.warning(f"🦠 **Malware Family:** {ioc.get('malware_printable', ioc.get('malware'))}")
+                    if ioc.get("malware_alias"):
+                        st.write(f"**Alias:** {ioc.get('malware_alias')}")
+                    if ioc.get("malware_malpedia"):
+                        st.write(f"**Malpedia:** {ioc.get('malware_malpedia')}")
                 
-                # Screenshot and scan link
-                if scan.get("screenshot"):
-                    st.image(scan.get("screenshot"), caption="Screenshot")
+                # Tags
+                if ioc.get("tags"):
+                    tags = ioc.get("tags", [])
+                    st.info(f"📋 **Tags:** {', '.join(tags) if isinstance(tags, list) else tags}")
                 
-                st.markdown(f"[Full Scan Report]({scan.get('scan_url')})")
+                # Temporal information
+                with st.expander("📅 Temporal Information", expanded=False):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**First Seen:** {ioc.get('first_seen', 'N/A')}")
+                    with col2:
+                        st.write(f"**Last Seen:** {ioc.get('last_seen', 'N/A')}")
+                
+                # Reference/Source information
+                with st.expander("🔗 Reference Information", expanded=False):
+                    if ioc.get("reference"):
+                        st.write(f"**Reference:** [{ioc.get('reference')}]({ioc.get('reference')})")
+                    if ioc.get("id"):
+                        st.write(f"**ThreatFox ID:** {ioc.get('id')}")
+                    if ioc.get("comment"):
+                        st.write(f"**Comment:** {ioc.get('comment')}")
+                
+                # Malware samples (if available)
+                if ioc.get("malware_samples"):
+                    samples = ioc.get("malware_samples", [])
+                    with st.expander(f"📦 Associated Malware Samples ({len(samples)})", expanded=False):
+                        for sample_idx, sample in enumerate(samples, 1):
+                            with st.expander(f"Sample {sample_idx}", expanded=False):
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write(f"**MD5:** `{sample.get('md5_hash', 'N/A')}`")
+                                    if sample.get("time_stamp"):
+                                        st.write(f"**Time:** {sample.get('time_stamp')}")
+                                with col2:
+                                    st.write(f"**SHA256:** `{sample.get('sha256_hash', 'N/A')}`")
+                                    if sample.get("malware_bazaar"):
+                                        st.write(f"**Bazaar:** [View]({sample.get('malware_bazaar')})")
+                
+                # Credits (if available)
+                if ioc.get("credits"):
+                    with st.expander("🏆 Credits", expanded=False):
+                        credits = ioc.get("credits", [])
+                        for credit in credits:
+                            st.write(f"**{credit.get('credits_from')}:** +{credit.get('credits_amount')} points")
+                
+                # Raw IOC data
+                with st.expander("📊 Full IOC Data (JSON)", expanded=False):
+                    st.json(ioc)
+
+        # Summary by threat type
+        st.markdown("---")
+        st.subheader("📊 IOC Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        malware_count = len([ioc for ioc in iocs if ioc.get("malware")])
+        botnet_count = len([ioc for ioc in iocs if ioc.get("threat_type") == "botnet_cc"])
+        phishing_count = len([ioc for ioc in iocs if ioc.get("threat_type") == "phishing"])
+        
+        with col1:
+            st.metric("Malware IOCs", malware_count)
+        with col2:
+            st.metric("Botnet C&C", botnet_count)
+        with col3:
+            st.metric("Phishing", phishing_count)
+        with col4:
+            st.metric("Other", ioc_count - malware_count - botnet_count - phishing_count)
+        
+        # Table view of all IOCs
+        with st.expander("📋 All IOCs (Table View)", expanded=False):
+            iocs_df = pd.DataFrame([
+                {
+                    "IOC": ioc.get("ioc", ""),
+                    "Type": ioc.get("ioc_type", ""),
+                    "Threat Type": ioc.get("threat_type", ""),
+                    "Malware": ioc.get("malware_printable", ioc.get("malware", "")),
+                    "Confidence": ioc.get("confidence_level", ""),
+                    "First Seen": ioc.get("first_seen", ""),
+                    "Reporter": ioc.get("reporter", ""),
+                }
+                for ioc in iocs
+            ])
+            st.dataframe(iocs_df, use_container_width=True)
+    else:
+        st.warning(f"⚠️ Query Status: {query_status}")
 
 
 def display_results(results: Dict[str, Any], observable: str):
@@ -1956,10 +2453,16 @@ def display_results(results: Dict[str, Any], observable: str):
         ("IP Detective", results.get("IP Detective")),
         ("GetIPIntel", results.get("GetIPIntel")),
         ("Ransomware.live", results.get("Ransomware.live")),
+        ("Hunter.io", results.get("Hunter.io")),
+        ("Malware Bazaar", results.get("Malware Bazaar")),
+        ("ThreatFox", results.get("ThreatFox")),
     ]
     
     for source_name, source_data in source_checks:
-        if source_data and "error" not in source_data:
+        if source_data and source_data.get("query_status") == "skipped":
+            status = f"⏭️ Skipped: {source_data.get('message', 'Query skipped').split(':')[0]}"
+            sources_summary.append({"Source": source_name, "Status": status})
+        elif source_data and "error" not in source_data:
             status = "✅ Data Found"
             sources_summary.append({"Source": source_name, "Status": status})
         elif source_data and "error" in source_data:
@@ -1969,11 +2472,13 @@ def display_results(results: Dict[str, Any], observable: str):
             status = "⏭️ No Data"
             sources_summary.append({"Source": source_name, "Status": status})
     
-    # Display summary table
+    # Display summary table (wrapped to allow horizontal scrolling)
     if sources_summary:
         st.markdown("**Query Status Summary:**")
         summary_df = pd.DataFrame(sources_summary)
+        st.markdown("<div class='report-wrapper'>", unsafe_allow_html=True)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     
     # Display detailed results in tabs
     st.markdown("---")
@@ -1990,6 +2495,9 @@ def display_results(results: Dict[str, Any], observable: str):
         ("IP Detective", results.get("IP Detective"), display_ipdetective_results),
         ("GetIPIntel", results.get("GetIPIntel"), display_getipintel_results),
         ("Ransomware.live", results.get("Ransomware.live"), display_ransomware_live_results),
+        ("Hunter.io", results.get("Hunter.io"), display_hunter_results),
+        ("Malware Bazaar", results.get("Malware Bazaar"), display_malware_bazaar_results),
+        ("ThreatFox", results.get("ThreatFox"), display_threatfox_results),
     ]
     
     # Filter sources that have valid data
@@ -2156,7 +2664,7 @@ def main():
             # Validate observable
             obs_type = classify_observable(observable)
             if obs_type == "Unknown":
-                st.error("❌ Invalid observable format. Please enter a valid IP, domain, URL, or hash.")
+                st.error("❌ Invalid observable format. Please enter a valid IP, domain, URL, or hash (or IP:port for ThreatFox).")
             else:
                 st.info(f"🔎 Observable type detected: **{obs_type}**")
                 
@@ -2246,7 +2754,8 @@ def main():
         active_apis = Config.get_active_apis()
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Intelligence Sources", f"{len(active_apis)}/10")
+            total_supported = len(Config.SUPPORTED_INTELLIGENCE_SOURCES)
+            st.metric("Intelligence Sources", f"{len(active_apis)}/{total_supported}")
         with col2:
             is_valid, _ = Config.validate_config()
             status = "ONLINE" if is_valid else "OFFLINE"
@@ -2268,10 +2777,11 @@ def main():
         
         # About section
         with st.expander("📖 About Platform", expanded=False):
-            st.markdown("""
+            total = len(Config.SUPPORTED_INTELLIGENCE_SOURCES)
+            st.markdown(f"""
             # <span style='color: #e63946; font-weight: bold;'>X-10 ThreatFusion</span>
             
-            Unified platform for threat intelligence correlation across 10 premium threat intelligence sources.
+            Unified platform for threat intelligence correlation across {total} premium threat intelligence sources.
             
             **Supported Indicators:**
             - IPv4 addresses & CIDR ranges
@@ -2387,6 +2897,28 @@ def get_api_clients() -> Dict[str, Any]:
             logger.info("✅ Ransomware.live initialized")
         except Exception as e:
             logger.error(f"❌ Failed to initialize Ransomware.live: {e}")
+    # Hunter.io - Email and domain intelligence
+    if Config.HUNTER_API_KEY:
+        try:
+            clients["Hunter.io"] = HunterAPI(Config.HUNTER_API_KEY)
+            logger.info("✅ Hunter.io initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Hunter.io: {e}")
+    # Malware Bazaar - Malware threat intelligence
+    if Config.MALWARE_BAZAAR_API_KEY:
+        try:
+            clients["Malware Bazaar"] = MalwareBazaarAPI(Config.MALWARE_BAZAAR_API_KEY)
+            logger.info("✅ Malware Bazaar initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Malware Bazaar: {e}")
+    
+    # ThreatFox - IOC threat intelligence
+    if Config.THREATFOX_API_KEY:
+        try:
+            clients["ThreatFox"] = ThreatFoxAPI(Config.THREATFOX_API_KEY)
+            logger.info("✅ ThreatFox initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize ThreatFox: {e}")
     
     
     logger.info(f"📊 Total active clients: {len(clients)}")
