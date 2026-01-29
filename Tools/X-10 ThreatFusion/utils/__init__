@@ -12,7 +12,7 @@ from .helpers import (
     format_results_for_export,
     create_summary_report,
     get_analytics_data,
-    parse_indicators_from_file,
+    parse_indicataors_from_file,
     validate_batch_indicators,
     get_batch_threat_summary,
     export_batch_results_json,
