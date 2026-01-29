@@ -41,6 +41,8 @@ class ConfigMeta(type):
             return os.getenv("MALWARE_BAZAAR_API_KEY", "")
         elif name == "THREATFOX_API_KEY":
             return os.getenv("THREATFOX_API_KEY", "")
+        elif name == "YARAIFY_API_KEY":
+            return os.getenv("YARAIFY_API_KEY", "")
         elif name == "REQUEST_TIMEOUT":
             return int(os.getenv("REQUEST_TIMEOUT", "10"))
         elif name == "CACHE_ENABLED":
@@ -72,6 +74,7 @@ class Config(metaclass=ConfigMeta):
         "Hunter.io",
         "Malware Bazaar",
         "ThreatFox",
+        "YARAify",
     ]
     
     @classmethod
@@ -109,6 +112,8 @@ class Config(metaclass=ConfigMeta):
             apis["Malware Bazaar"] = True
         if os.getenv("THREATFOX_API_KEY", ""):
             apis["ThreatFox"] = True
+        if os.getenv("YARAIFY_API_KEY", ""):
+            apis["YARAify"] = True
         
         return apis
     
@@ -129,6 +134,7 @@ class Config(metaclass=ConfigMeta):
             "HUNTER_API_KEY": "✅" if os.getenv("HUNTER_API_KEY", "") else "❌",
             "MALWARE_BAZAAR_API_KEY": "✅" if os.getenv("MALWARE_BAZAAR_API_KEY", "") else "❌",
             "THREATFOX_API_KEY": "✅" if os.getenv("THREATFOX_API_KEY", "") else "❌",
+            "YARAIFY_API_KEY": "✅" if os.getenv("YARAIFY_API_KEY", "") else "❌",
         }
         return debug_info
     
