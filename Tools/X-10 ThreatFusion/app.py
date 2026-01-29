@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 import time
 import re
+import json
 
 # Configure Streamlit page
 st.set_page_config(
@@ -23,6 +24,72 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# Add this CSS for better tab styling and scrolling
+CUSTOM_TAB_CSS = """
+<style>
+/* Better tab styling for horizontal scrolling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0;
+    background-color: #1a1a1a;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: nowrap;
+    max-width: 100%;
+    scrollbar-width: thin;
+    scrollbar-color: #ff4444 #1a1a1a;
+}
+
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+    height: 6px;
+}
+
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+    background: #ff4444;
+    border-radius: 3px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    flex-shrink: 0;
+    min-width: 120px;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 10px 15px;
+    margin: 0;
+    border-radius: 0;
+    border-bottom: 3px solid transparent;
+    color: #ff4444;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #ff4444 !important;
+    border-bottom-color: #ff4444 !important;
+    background-color: #252525 !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background-color: #252525 !important;
+    color: #ffffff !important;
+}
+
+.stTabs [data-baseweb="tab-panel"] {
+    padding-top: 20px;
+}
+</style>
+"""
+
+# Add this to your main() function or after the CSS definitions:
+st.markdown(CUSTOM_TAB_CSS, unsafe_allow_html=True)
 
 # Apply dark theme CSS with red/black/white color scheme
 dark_theme_css = """
@@ -423,7 +490,10 @@ from apis import (
     HunterAPI,
     MalwareBazaarAPI,
     ThreatFoxAPI,
+    YARAifyAPI,
 )
+
+
 from utils import (
     Config,
     classify_observable,
@@ -1294,7 +1364,7 @@ def display_source_selection():
     
     with col5:
         threatfox = st.checkbox("ThreatFox", value=bool(Config.THREATFOX_API_KEY), disabled=not Config.THREATFOX_API_KEY)
-    
+        yaraify = st.checkbox("YARAify", value=bool(Config.YARAIFY_API_KEY), disabled=not Config.YARAIFY_API_KEY)
     selected_sources = []
     if vt:
         selected_sources.append("VirusTotal")
@@ -1322,6 +1392,8 @@ def display_source_selection():
         selected_sources.append("Malware Bazaar")
     if threatfox:
         selected_sources.append("ThreatFox")
+    if yaraify:
+        selected_sources.append("YARAify")
     
     return selected_sources
 
@@ -2288,22 +2360,23 @@ def display_malware_bazaar_results(data: Dict[str, Any]):
         with st.expander("Raw Data (Malware Bazaar)", expanded=False):
             st.info("No data returned from Malware Bazaar API")
 
-
+#############################
 def display_threatfox_results(data: Dict[str, Any]):
-    """Display ThreatFox results (IOC threat intelligence)"""
+    """Display ThreatFox results (IOC threat intelligence) - CLEAN VERSION"""
     st.subheader("🔍 ThreatFox Results")
 
     if not data:
         st.info("ℹ️ No ThreatFox data available")
         return
 
-    # Handle skipped status (missing port for IP)
+    # Handle skipped status
     if data.get("query_status") == "skipped":
         st.warning(f"⚠️ {data.get('message', 'ThreatFox query was skipped')}")
+        st.info("💡 **Tip:** For IP addresses, try adding a port number (e.g., '192.168.1.1:443')")
         return
 
-    if "error" in data:
-        st.error(f"Error: {data['error']}")
+    if "error" in data and data.get("query_status") == "error":
+        st.error(f"❌ Error: {data['error']}")
         return
 
     query_status = data.get("query_status", "")
@@ -2317,119 +2390,311 @@ def display_threatfox_results(data: Dict[str, Any]):
         st.success(f"✅ Found {ioc_count} IOC(s) in ThreatFox!")
 
         iocs = data.get("iocs", [])
+        
+        if not isinstance(iocs, list):
+            st.error(f"❌ Error: IOCs data is malformed")
+            return
+        
+        if len(iocs) == 0:
+            st.info("ℹ️ No IOCs in data list")
+            return
 
-        # Display individual IOC details
+        # Display each IOC with comprehensive details
         for idx, ioc in enumerate(iocs, 1):
-            with st.expander(f"📌 IOC {idx}: {ioc.get('ioc', 'N/A')}", expanded=True if idx == 1 else False):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**IOC:** `{ioc.get('ioc')}`")
-                    st.write(f"**IOC Type:** {ioc.get('ioc_type_desc', ioc.get('ioc_type', 'N/A'))}")
-                    st.write(f"**Threat Type:** {ioc.get('threat_type_desc', ioc.get('threat_type', 'N/A'))}")
+            try:
+                with st.expander(f"📌 IOC {idx}/{len(iocs)}: {ioc.get('ioc', 'N/A')}", expanded=(idx == 1)):
                     
-                with col2:
-                    st.write(f"**ID:** {ioc.get('id')}")
-                    st.write(f"**Confidence:** {ioc.get('confidence_level', 'N/A')}%")
-                    st.write(f"**Reporter:** {ioc.get('reporter', 'N/A')}")
-                
-                # Malware information
-                if ioc.get("malware"):
-                    st.warning(f"🦠 **Malware Family:** {ioc.get('malware_printable', ioc.get('malware'))}")
-                    if ioc.get("malware_alias"):
-                        st.write(f"**Alias:** {ioc.get('malware_alias')}")
-                    if ioc.get("malware_malpedia"):
-                        st.write(f"**Malpedia:** {ioc.get('malware_malpedia')}")
-                
-                # Tags
-                if ioc.get("tags"):
-                    tags = ioc.get("tags", [])
-                    st.info(f"📋 **Tags:** {', '.join(tags) if isinstance(tags, list) else tags}")
-                
-                # Temporal information
-                with st.expander("📅 Temporal Information", expanded=False):
+                    # Key metrics in columns
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        confidence = ioc.get('confidence_level', 'N/A')
+                        st.metric("Confidence", f"{confidence}%" if confidence != 'N/A' else 'N/A')
+                    with col2:
+                        threat_type = ioc.get('threat_type_desc', ioc.get('threat_type', 'N/A'))
+                        if 'botnet' in threat_type.lower():
+                            st.metric("Threat", "🤖 Botnet C&C")
+                        elif 'phishing' in threat_type.lower():
+                            st.metric("Threat", "🎣 Phishing")
+                        elif 'malware' in threat_type.lower():
+                            st.metric("Threat", "🦠 Malware")
+                        else:
+                            st.metric("Threat", threat_type[:15])
+                    with col3:
+                        reporter = ioc.get('reporter', 'N/A')
+                        st.metric("Reporter", reporter[:12] if reporter != 'N/A' else 'N/A')
+                    with col4:
+                        ioc_id = ioc.get('id', 'N/A')
+                        st.metric("ThreatFox ID", str(ioc_id))
+
+                    st.markdown("---")
+                    
+                    # IOC Details
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.write(f"**First Seen:** {ioc.get('first_seen', 'N/A')}")
-                    with col2:
-                        st.write(f"**Last Seen:** {ioc.get('last_seen', 'N/A')}")
-                
-                # Reference/Source information
-                with st.expander("🔗 Reference Information", expanded=False):
-                    if ioc.get("reference"):
-                        st.write(f"**Reference:** [{ioc.get('reference')}]({ioc.get('reference')})")
-                    if ioc.get("id"):
-                        st.write(f"**ThreatFox ID:** {ioc.get('id')}")
-                    if ioc.get("comment"):
-                        st.write(f"**Comment:** {ioc.get('comment')}")
-                
-                # Malware samples (if available)
-                if ioc.get("malware_samples"):
-                    samples = ioc.get("malware_samples", [])
-                    with st.expander(f"📦 Associated Malware Samples ({len(samples)})", expanded=False):
-                        for sample_idx, sample in enumerate(samples, 1):
-                            with st.expander(f"Sample {sample_idx}", expanded=False):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**MD5:** `{sample.get('md5_hash', 'N/A')}`")
-                                    if sample.get("time_stamp"):
-                                        st.write(f"**Time:** {sample.get('time_stamp')}")
-                                with col2:
-                                    st.write(f"**SHA256:** `{sample.get('sha256_hash', 'N/A')}`")
-                                    if sample.get("malware_bazaar"):
-                                        st.write(f"**Bazaar:** [View]({sample.get('malware_bazaar')})")
-                
-                # Credits (if available)
-                if ioc.get("credits"):
-                    with st.expander("🏆 Credits", expanded=False):
-                        credits = ioc.get("credits", [])
-                        for credit in credits:
-                            st.write(f"**{credit.get('credits_from')}:** +{credit.get('credits_amount')} points")
-                
-                # Raw IOC data
-                with st.expander("📊 Full IOC Data (JSON)", expanded=False):
-                    st.json(ioc)
+                        st.write(f"🔹 **IOC:** `{ioc.get('ioc', 'N/A')}`")
+                        st.write(f"🔹 **Type:** {ioc.get('ioc_type_desc', ioc.get('ioc_type', 'N/A'))}")
+                        st.write(f"🔹 **Threat Type:** {ioc.get('threat_type_desc', ioc.get('threat_type', 'N/A'))}")
+                        
+                        compromised = ioc.get('is_compromised', False)
+                        st.write(f"🔹 **Status:** {'🟢 Active/Compromised' if compromised else '🟡 Inactive'}")
+                        
+                        first_seen = ioc.get('first_seen', 'N/A')
+                        st.write(f"🔹 **First Seen:** {first_seen}")
+                        
+                        last_seen = ioc.get('last_seen')
+                        if last_seen:
+                            st.write(f"🔹 **Last Seen:** {last_seen}")
+                        else:
+                            st.write(f"🔹 **Last Seen:** 🔴 STILL ACTIVE")
 
-        # Summary by threat type
+                    with col2:
+                        st.write(f"🔹 **Confidence Level:** {ioc.get('confidence_level', 'N/A')}%")
+                        st.write(f"🔹 **Reporter:** {ioc.get('reporter', 'N/A')}")
+                        st.write(f"🔹 **ThreatFox ID:** {ioc.get('id', 'N/A')}")
+
+                    # Malware information
+                    if ioc.get("malware") or ioc.get("malware_printable"):
+                        st.markdown("---")
+                        malware_name = ioc.get('malware_printable', ioc.get('malware', 'Unknown'))
+                        st.error(f"🦠 **MALWARE FAMILY DETECTED:** {malware_name.upper()}")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if ioc.get("malware_alias"):
+                                st.write(f"**Aliases:** {ioc.get('malware_alias')}")
+                        with col2:
+                            if ioc.get("malware_malpedia"):
+                                st.markdown(f"[🔗 View on Malpedia]({ioc.get('malware_malpedia')})")
+
+                    # Tags
+                    if ioc.get("tags"):
+                        st.markdown("---")
+                        tags = ioc.get("tags", [])
+                        if isinstance(tags, list):
+                            tags_str = ", ".join(tags)
+                            st.info(f"📋 **Tags:** {tags_str}")
+                        else:
+                            st.info(f"📋 **Tags:** {tags}")
+
+                    # Reference
+                    if ioc.get("reference"):
+                        st.markdown("---")
+                        st.write("**🔗 Reference:**")
+                        st.markdown(f"🔹 [**Reference URL**]({ioc.get('reference')})")
+
+                    # Malware Samples
+                    if ioc.get("malware_samples") and len(ioc.get("malware_samples", [])) > 0:
+                        st.markdown("---")
+                        samples = ioc.get("malware_samples", [])
+                        st.write(f"**📦 Associated Malware Samples ({len(samples)}):**")
+                        
+                        for sample_idx, sample in enumerate(samples, 1):
+                            st.write(f"**Sample {sample_idx}:**")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if sample.get('md5_hash'):
+                                    st.code(sample.get('md5_hash'), language='text')
+                                    st.caption("MD5 Hash")
+                            with col2:
+                                if sample.get('sha256_hash'):
+                                    st.code(sample.get('sha256_hash'), language='text')
+                                    st.caption("SHA256 Hash")
+                            
+                            if sample.get("time_stamp"):
+                                st.write(f"**Time:** {sample.get('time_stamp')}")
+                            if sample.get("malware_bazaar"):
+                                st.markdown(f"[🔗 View on Malware Bazaar]({sample.get('malware_bazaar')})")
+                            st.write("")
+
+            except Exception as e:
+                st.error(f"❌ Error displaying IOC {idx}: {str(e)}")
+
+        # Summary statistics
         st.markdown("---")
-        st.subheader("📊 IOC Summary")
+        st.subheader("📊 ThreatFox Summary Statistics")
         
         col1, col2, col3, col4 = st.columns(4)
-        
-        malware_count = len([ioc for ioc in iocs if ioc.get("malware")])
-        botnet_count = len([ioc for ioc in iocs if ioc.get("threat_type") == "botnet_cc"])
-        phishing_count = len([ioc for ioc in iocs if ioc.get("threat_type") == "phishing"])
-        
         with col1:
+            malware_count = len([ioc for ioc in iocs if ioc.get("malware")])
             st.metric("Malware IOCs", malware_count)
         with col2:
+            botnet_count = len([ioc for ioc in iocs if "botnet" in ioc.get("threat_type", "").lower()])
             st.metric("Botnet C&C", botnet_count)
         with col3:
+            phishing_count = len([ioc for ioc in iocs if "phishing" in ioc.get("threat_type", "").lower()])
             st.metric("Phishing", phishing_count)
         with col4:
-            st.metric("Other", ioc_count - malware_count - botnet_count - phishing_count)
+            avg_confidence = sum([ioc.get("confidence_level", 0) for ioc in iocs]) / len(iocs) if iocs else 0
+            st.metric("Avg Confidence", f"{avg_confidence:.0f}%")
+
+        # Table view
+        st.markdown("---")
+        st.write("**📋 All IOCs Summary Table:**")
         
-        # Table view of all IOCs
-        with st.expander("📋 All IOCs (Table View)", expanded=False):
-            iocs_df = pd.DataFrame([
-                {
-                    "IOC": ioc.get("ioc", ""),
-                    "Type": ioc.get("ioc_type", ""),
-                    "Threat Type": ioc.get("threat_type", ""),
-                    "Malware": ioc.get("malware_printable", ioc.get("malware", "")),
-                    "Confidence": ioc.get("confidence_level", ""),
-                    "First Seen": ioc.get("first_seen", ""),
-                    "Reporter": ioc.get("reporter", ""),
-                }
-                for ioc in iocs
-            ])
-            st.dataframe(iocs_df, use_container_width=True)
+        iocs_table = []
+        for ioc in iocs:
+            iocs_table.append({
+                "IOC": ioc.get("ioc", ""),
+                "Type": ioc.get("ioc_type_desc", ioc.get("ioc_type", "")),
+                "Threat": ioc.get("threat_type_desc", ioc.get("threat_type", "")),
+                "Malware": ioc.get("malware_printable", ioc.get("malware", "")),
+                "Confidence": f"{ioc.get('confidence_level', '')}%",
+                "First Seen": ioc.get("first_seen", ""),
+                "Reporter": ioc.get("reporter", ""),
+                "Status": "Active" if ioc.get("is_compromised") else "Inactive"
+            })
+        
+        if iocs_table:
+            import pandas as pd
+            df_iocs = pd.DataFrame(iocs_table)
+            st.dataframe(df_iocs, use_container_width=True, hide_index=True)
     else:
         st.warning(f"⚠️ Query Status: {query_status}")
 
 
+# Add this function after the other display functions
+
+def display_yaraify_results(data: Dict[str, Any]):
+    """Display YARAify results (YARA rule detection and malware analysis)"""
+    st.subheader("🔍 YARAify Results")
+
+    if not data:
+        st.info("ℹ️ No YARAify data available")
+        return
+
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+
+    # Handle hash not found
+    if data.get("query_status") == "hash_not_found":
+        st.info("ℹ️ Hash not found in YARAify database")
+        return
+
+    query_status = data.get("query_status", "")
+    
+    if query_status == "ok":
+        st.success("✅ Malware sample found in YARAify!")
+        
+        # File information - NO nested expanders
+        st.markdown("---")
+        st.write("**📄 File Information:**")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"🔹 **File Name:** {data.get('file_name') or 'N/A'}")
+            st.write(f"🔹 **File Size:** {data.get('file_size') or 'N/A'} bytes")
+            st.write(f"🔹 **File Type:** {data.get('file_type') or 'N/A'}")
+            st.write(f"🔹 **MIME Type:** {data.get('mime_type') or 'N/A'}")
+        with col2:
+            st.write(f"🔹 **MD5:** `{data.get('md5_hash') or 'N/A'}`")
+            st.write(f"🔹 **SHA1:** `{data.get('sha1_hash') or 'N/A'}`")
+            st.write(f"🔹 **SHA256:** `{data.get('sha256_hash') or 'N/A'}`")
+
+        # Additional hashes and similarity metrics - always show these
+        st.write(f"🔹 **SHA3-384:** {data.get('sha3_384') or 'N/A'}")
+        st.write(f"🔹 **Imphash:** {data.get('imphash') or 'N/A'}")
+        st.write(f"🔹 **ssdeep:** {data.get('ssdeep') or 'N/A'}")
+        st.write(f"🔹 **TLSH:** {data.get('tlsh') or 'N/A'}")
+        st.write(f"🔹 **Telfhash:** {data.get('telfhash') or 'N/A'}")
+        st.write(f"🔹 **Gimphash:** {data.get('gimphash') or 'N/A'}")
+        st.write(f"🔹 **Icon DHash:** {data.get('dhash_icon') or 'N/A'}")
+
+        # Sightings and file download link
+        st.write(f"🔹 **Sightings:** {data.get('sightings') or 'N/A'}")
+        if data.get('file_download'):
+            st.markdown(f"🔹 **File Download:** [Download Sample]({data.get('file_download')})")
+
+        # Malware detection
+        st.markdown("---")
+        st.write("**🔍 Detection Analysis:**")
+        
+        if data.get("signature"):
+            st.error(f"🔴 **MALWARE SIGNATURE DETECTED:** {data.get('signature')}")
+        else:
+            st.success("✅ **No malware signature detected**")
+        
+        if data.get("malware_family"):
+            st.warning(f"🦠 **Malware Family:** {data.get('malware_family')}")
+
+        # YARA rules
+        yara_count = data.get("yara_rules", 0)
+        if yara_count > 0:
+            st.success(f"⚠️ **YARA Rules Matched:** {yara_count}")
+            
+            yara_rules_list = data.get("yara_rules_list", [])
+            if yara_rules_list:
+                st.write("**YARA Rules Details:**")
+                for idx, rule in enumerate(yara_rules_list, 1):
+                    if isinstance(rule, dict):
+                        rule_name = rule.get("rule_name", "Unknown")
+                        author = rule.get("author", "Unknown")
+                        description = rule.get("description", "")
+                        
+                        st.write(f"**{idx}. {rule_name}**")
+                        st.write(f"   🔹 Author: {author}")
+                        if description:
+                            st.write(f"   🔹 Description: {description}")
+                        st.write("")
+        else:
+            st.info("ℹ️ No YARA rules matched")
+        
+        # ClamAV signature
+        if data.get("clamav_signature"):
+            st.info(f"🛡️ **ClamAV Signature:** {data.get('clamav_signature')}")
+
+        # Temporal information - NO nested expanders
+        st.markdown("---")
+        st.write("**📅 Temporal & Additional Information:**")
+        col1, col2 = st.columns(2)
+        with col1:
+            if data.get("first_seen"):
+                st.write(f"🔹 **First Seen:** {data.get('first_seen')}")
+            else:
+                st.write(f"🔹 **First Seen:** N/A")
+        with col2:
+            if data.get("last_seen"):
+                st.write(f"🔹 **Last Seen:** {data.get('last_seen')}")
+            else:
+                st.write(f"🔹 **Last Seen:** N/A")
+        
+        # Reporter information
+        if data.get("reporter"):
+            st.write(f"🔹 **Reporter:** {data.get('reporter')}")
+        
+        # Tags
+        tags = data.get("tags", [])
+        if tags:
+            st.write(f"🔹 **Tags:** {', '.join(tags)}")
+        
+        # Comments
+        comments = data.get("comments", 0)
+        if comments > 0:
+            st.write(f"🔹 **Community Comments:** {comments}")
+            
+            comments_list = data.get("comments_list", [])
+            if comments_list:
+                st.write("**Recent Comments:**")
+                for comment in comments_list:
+                    if isinstance(comment, dict):
+                        author = comment.get("display_name", "Anonymous")
+                        text = comment.get("comment", "")
+                        date = comment.get("date_added", "")
+                        st.write(f"**{author}** ({date}): _{text}_")
+                        st.write("---")
+        
+        # Raw data as last expandable section (top-level only)
+        st.markdown("---")
+        with st.expander("🔧 Debug - Raw Response Data", expanded=False):
+            if data.get("raw_data"):
+                st.json(data.get("raw_data"))
+            else:
+                st.write("No raw data available")
+
+    else:
+        st.warning(f"⚠️ Query Status: {query_status}")
+
 def display_results(results: Dict[str, Any], observable: str):
-    """Display all results for single indicator in organized table format"""
+    """Display all results for single indicator - CLEAN VERSION"""
     st.markdown("---")
     
     # Overview section
@@ -2443,47 +2708,46 @@ def display_results(results: Dict[str, Any], observable: str):
     
     # Check each source and build summary
     source_checks = [
-        ("VirusTotal", results.get("VirusTotal")),
-        ("Shodan", results.get("Shodan")),
-        ("AlienVault OTX", results.get("AlienVault OTX")),
-        ("AbuseIPDB", results.get("AbuseIPDB")),
-        ("IPInfo", results.get("IPInfo")),
-        ("URLhaus", results.get("URLhaus")),
-        ("URLscan", results.get("URLscan")),
-        ("IP Detective", results.get("IP Detective")),
-        ("GetIPIntel", results.get("GetIPIntel")),
-        ("Ransomware.live", results.get("Ransomware.live")),
-        ("Hunter.io", results.get("Hunter.io")),
-        ("Malware Bazaar", results.get("Malware Bazaar")),
-        ("ThreatFox", results.get("ThreatFox")),
+        ("VirusTotal", results.get("VirusTotal"), display_virustotal_results),
+        ("Shodan", results.get("Shodan"), display_shodan_results),
+        ("AlienVault OTX", results.get("AlienVault OTX"), display_otx_results),
+        ("AbuseIPDB", results.get("AbuseIPDB"), display_abuseipdb_results),
+        ("IPInfo", results.get("IPInfo"), display_ipinfo_results),
+        ("URLhaus", results.get("URLhaus"), display_urlhaus_results),
+        ("URLscan", results.get("URLscan"), display_urlscan_results),
+        ("IP Detective", results.get("IP Detective"), display_ipdetective_results),
+        ("GetIPIntel", results.get("GetIPIntel"), display_getipintel_results),
+        ("Ransomware.live", results.get("Ransomware.live"), display_ransomware_live_results),
+        ("Hunter.io", results.get("Hunter.io"), display_hunter_results),
+        ("Malware Bazaar", results.get("Malware Bazaar"), display_malware_bazaar_results),
+        ("ThreatFox", results.get("ThreatFox"), display_threatfox_results),
+        ("YARAify", results.get("YARAify"), display_yaraify_results),
     ]
     
-    for source_name, source_data in source_checks:
+    for source_name, source_data, display_func in source_checks:
         if source_data and source_data.get("query_status") == "skipped":
-            status = f"⏭️ Skipped: {source_data.get('message', 'Query skipped').split(':')[0]}"
+            status = f"⏭️ Skipped"
             sources_summary.append({"Source": source_name, "Status": status})
         elif source_data and "error" not in source_data:
             status = "✅ Data Found"
             sources_summary.append({"Source": source_name, "Status": status})
         elif source_data and "error" in source_data:
-            status = f"⚠️ Error: {source_data.get('error', 'Unknown error')}"
+            status = f"⚠️ Error"
             sources_summary.append({"Source": source_name, "Status": status})
         else:
             status = "⏭️ No Data"
             sources_summary.append({"Source": source_name, "Status": status})
     
-    # Display summary table (wrapped to allow horizontal scrolling)
+    # Display summary table
     if sources_summary:
         st.markdown("**Query Status Summary:**")
         summary_df = pd.DataFrame(sources_summary)
-        st.markdown("<div class='report-wrapper'>", unsafe_allow_html=True)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
-        st.markdown("</div>", unsafe_allow_html=True)
     
-    # Display detailed results in tabs
+    # Display detailed results in tabs - FIXED THREATFOX FILTERING
     st.markdown("---")
     
-    # Get list of sources with data
+    # Get list of sources with data - IMPROVED FILTERING
     sources_with_data = [
         ("VirusTotal", results.get("VirusTotal"), display_virustotal_results),
         ("Shodan", results.get("Shodan"), display_shodan_results),
@@ -2498,25 +2762,98 @@ def display_results(results: Dict[str, Any], observable: str):
         ("Hunter.io", results.get("Hunter.io"), display_hunter_results),
         ("Malware Bazaar", results.get("Malware Bazaar"), display_malware_bazaar_results),
         ("ThreatFox", results.get("ThreatFox"), display_threatfox_results),
+        ("YARAify", results.get("YARAify"), display_yaraify_results),
     ]
     
-    # Filter sources that have valid data
-    valid_sources = [(name, data, func) for name, data, func in sources_with_data 
-                     if data and "error" not in data]
+    # FIXED FILTERING - Include ThreatFox even if it has different structure
+    valid_sources = []
+    for name, data, func in sources_with_data:
+        if data is not None and isinstance(data, dict):
+            # Include if: no error, or has IOCs, or is skipped, or has valid data
+            # Also include YARAify errors (hash not found or wrong type) for user feedback
+            if ("error" not in data and len(data) > 1) or data.get("ioc_count", 0) > 0 or data.get("query_status") == "skipped" or data.get("query_status") == "ok" or (name == "YARAify" and "error" in data):
+                valid_sources.append((name, data, func))
     
     if valid_sources:
-        # Create tabs for each source
-        tabs = st.tabs([f"📊 {name}" for name, _, _ in valid_sources])
+        # Create tabs with better styling
+        tab_labels = [f"📊 {name}" for name, _, _ in valid_sources]
+        
+        # CUSTOM TAB STYLING - Horizontal scrollable
+        tabs_html = """
+        <style>
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0;
+            background-color: #1a1a1a;
+            padding: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            display: flex;
+            flex-wrap: nowrap;
+            max-width: 100%;
+            scrollbar-width: thin;
+            scrollbar-color: #ff4444 #1a1a1a;
+        }
+        
+        .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+            height: 6px;
+        }
+        
+        .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        
+        .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+            background: #ff4444;
+            border-radius: 3px;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            flex-shrink: 0;
+            min-width: 120px;
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 10px 15px;
+            margin: 0;
+            border-radius: 0;
+            border-bottom: 3px solid transparent;
+            color: #ff4444;
+            font-weight: 500;
+            font-size: 13px;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            color: #ff4444 !important;
+            border-bottom-color: #ff4444 !important;
+            background-color: #252525 !important;
+        }
+        
+        .stTabs [data-baseweb="tab"]:hover {
+            background-color: #252525 !important;
+            color: #ffffff !important;
+        }
+        
+        .stTabs [data-baseweb="tab-panel"] {
+            padding-top: 20px;
+        }
+        </style>
+        """
+        
+        st.markdown(tabs_html, unsafe_allow_html=True)
+        
+        # Create tabs
+        tabs = st.tabs(tab_labels)
         
         for tab, (source_name, source_data, display_func) in zip(tabs, valid_sources):
             with tab:
                 try:
                     display_func(source_data)
                 except Exception as e:
-                    st.error(f"Error displaying {source_name} results: {str(e)}")
+                    st.error(f"Error rendering {source_name}: {str(e)}")
     else:
-        st.info("ℹ️ No data available from selected sources. Please try different sources or observable.")
-
+        st.info("ℹ️ No data available from selected sources.")
 
 def display_batch_results(batch_results: Dict[str, Dict[str, Any]], indicators_metadata: list):
     """Display batch analysis results - individual report for each indicator"""
@@ -2920,6 +3257,13 @@ def get_api_clients() -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"❌ Failed to initialize ThreatFox: {e}")
     
+    # YARAify - YARA rule detection and malware analysis
+    if Config.YARAIFY_API_KEY:
+        try:
+            clients["YARAify"] = YARAifyAPI(Config.YARAIFY_API_KEY)
+            logger.info("✅ YARAify initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize YARAify: {e}")
     
     logger.info(f"📊 Total active clients: {len(clients)}")
     return clients
