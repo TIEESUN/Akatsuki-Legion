@@ -15,6 +15,7 @@ from .ransomware_live import RansomwareLiveAPI
 from .hunter import HunterAPI
 from .malware_bazaar import MalwareBazaarAPI
 from .threatfox import ThreatFoxAPI
+from .yaraify import YARAifyAPI
 
 __all__ = [
     "VirusTotalAPI",
@@ -30,4 +31,5 @@ __all__ = [
     "HunterAPI",
     "MalwareBazaarAPI",
     "ThreatFoxAPI",
+    "YARAifyAPI",
 ]
