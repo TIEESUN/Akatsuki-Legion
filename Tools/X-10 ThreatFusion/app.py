@@ -24,6 +24,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 # Add this CSS for better tab styling and scrolling
 CUSTOM_TAB_CSS = """
 <style>
@@ -491,8 +492,9 @@ from apis import (
     MalwareBazaarAPI,
     ThreatFoxAPI,
     YARAifyAPI,
+    SSLBLAPI,
+    FeodoTrackerAPI,
 )
-
 
 from utils import (
     Config,
@@ -528,7 +530,6 @@ def initialize_session_state():
         st.session_state.batch_results = {}
     if "batch_mode" not in st.session_state:
         st.session_state.batch_mode = False
-
 
 
 def run_analysis(observable: str, selected_sources: list) -> Dict[str, Any]:
@@ -799,6 +800,446 @@ def extract_iocs_from_group(ransomware_results: Dict[str, Any]) -> List[str]:
     # Remove duplicates and limit to 10 most relevant
     iocs = list(set(iocs))[:10]
     return iocs
+
+
+def display_threat_group_results(results: Dict[str, Any], threat_group: str):
+    """
+    Display comprehensive threat group analysis results with all Ransomware.live intelligence
+    """
+    if not results:
+        st.error("No results found")
+        return
+    
+    # ===== SECTION 1: COMPREHENSIVE GROUP INTELLIGENCE =====
+    ransomware_result = results.get("Ransomware.live", {})
+    
+    if isinstance(ransomware_result, dict) and "error" not in ransomware_result:
+        st.markdown("---")
+        
+        # ===== Header with Group Name and Status =====
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.markdown(f"### 🎯 **{threat_group}**")
+        with col2:
+            status = ransomware_result.get("status", "Unknown").upper()
+            if "ACTIVE" in status:
+                st.markdown(f"<p style='color: #ff4757; font-weight: bold; font-size: 16px;'>🔴 {status}</p>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<p style='color: #95a5a6; font-weight: bold; font-size: 16px;'>⚫ {status}</p>", unsafe_allow_html=True)
+        with col3:
+            threat_level = ransomware_result.get("threat_level", "unknown").upper()
+            if threat_level == "CRITICAL":
+                st.markdown(f"<p style='color: #ff4757; font-weight: bold; font-size: 16px;'>⚠️ {threat_level}</p>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<p style='color: #ffa502; font-weight: bold; font-size: 16px;'>📊 {threat_level}</p>", unsafe_allow_html=True)
+        
+        # ===== Description and History =====
+        if ransomware_result.get("description"):
+            with st.expander("📖 **Group Description & History**", expanded=True):
+                st.markdown(f"**Description:** {ransomware_result.get('description', 'N/A')}")
+                if ransomware_result.get("history"):
+                    st.markdown(f"\n**History:** {ransomware_result.get('history', 'N/A')}")
+        
+        # ===== Key Statistics =====
+        st.markdown("#### 📊 **Group Statistics**")
+        stats = ransomware_result.get("statistics", {})
+        
+        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+        with stat_col1:
+            st.metric("Total Victims", stats.get("total_victims", 0), delta=None)
+        with stat_col2:
+            avg_delay = stats.get('avg_delay_days', 0)
+            if isinstance(avg_delay, str):
+                st.metric("Avg Delay", avg_delay, delta=None)
+            else:
+                st.metric("Avg Delay (days)", f"{avg_delay:.1f}" if avg_delay else "N/A", delta=None)
+        with stat_col3:
+            st.metric("Inactive Since (days)", stats.get("inactive_days", 0), delta=None)
+        with stat_col4:
+            infostealer = stats.get('infostealer_percentage', 0)
+            if isinstance(infostealer, str):
+                st.metric("Infostealer %", infostealer, delta=None)
+            else:
+                st.metric("Infostealer %", f"{infostealer:.1f}%" if infostealer else "0%", delta=None)
+        
+        # Date range
+        date_col1, date_col2 = st.columns(2)
+        with date_col1:
+            st.info(f"🔵 **First Victim Discovered:** {stats.get('first_victim_date', 'Unknown')}")
+        with date_col2:
+            st.info(f"🔴 **Last Victim Discovered:** {stats.get('last_victim_date', 'Unknown')}")
+        
+        st.markdown("---")
+        
+        # ===== KNOWN LOCATIONS =====
+        known_locations_list = ransomware_result.get("metadata", {}).get("known_locations_list", [])
+        locations_count = ransomware_result.get("metadata", {}).get("known_locations", 0)
+        if known_locations_list or locations_count > 0:
+            st.markdown(f"#### 🌐 **Known Locations ({locations_count})**")
+            if known_locations_list:
+                with st.expander("View Locations", expanded=True):
+                    for i, location in enumerate(known_locations_list[:20], 1):
+                        st.text(f"{i}. {location}")
+                    if len(known_locations_list) > 20:
+                        st.caption(f"Showing 20 of {len(known_locations_list)} locations")
+            else:
+                st.info(f"✓ {locations_count} location(s) available")
+        
+        st.markdown("---")
+        
+        # ===== Intelligence Metadata =====
+        st.markdown("#### 🔍 **Intelligence Metadata Summary**")
+        metadata = ransomware_result.get("metadata", {})
+        
+        # Row 1: Main metadata counts
+        meta_col1, meta_col2, meta_col3, meta_col4 = st.columns(4)
+        with meta_col1:
+            ransom_notes = metadata.get("ransom_notes", 0)
+            st.metric("📄 Ransom Notes", ransom_notes)
+        with meta_col2:
+            tools = metadata.get("tools_used", 0)
+            st.metric("🛠️ Tools Used", tools)
+        with meta_col3:
+            cves = metadata.get("vulnerabilities_exploited", 0)
+            st.metric("🔴 CVEs Exploited", cves)
+        with meta_col4:
+            ttps = metadata.get("ttps_matrix", 0)
+            st.metric("📊 TTPs Matrix", ttps)
+        
+        # Row 2: Intelligence counts
+        meta_col5, meta_col6, meta_col7, meta_col8 = st.columns(4)
+        with meta_col5:
+            chats = metadata.get("negotiation_chats", 0)
+            st.metric("💬 Negotiation Chats", chats)
+        with meta_col6:
+            yara = metadata.get("yara_rules", 0)
+            st.metric("🔐 YARA Rules", yara)
+        with meta_col7:
+            iocs = metadata.get("iocs_count", 0)
+            st.metric("🎯 IoCs Available", iocs)
+        
+        st.markdown("---")
+        
+        # ===== TARGET INFORMATION (Top Sectors & Countries) =====
+        targets = ransomware_result.get("targets", {})
+        top_sectors = targets.get("top_sectors", [])
+        top_countries = targets.get("top_countries", [])
+        
+        if top_sectors or top_countries:
+            st.markdown("#### 🎯 **Target Information**")
+            
+            if top_sectors:
+                st.markdown("**Top 5 Activity Sectors:**")
+                sector_col1, sector_col2 = st.columns(2)
+                for i, sector_data in enumerate(top_sectors[:5], 1):
+                    if isinstance(sector_data, dict):
+                        sector_name = sector_data.get("name", "Unknown")
+                        count = sector_data.get("count", 0)
+                        with sector_col1 if i % 2 == 1 else sector_col2:
+                            st.markdown(f"{i}. {sector_name} - **{count}** victims")
+                    else:
+                        with sector_col1 if i % 2 == 1 else sector_col2:
+                            st.markdown(f"{i}. {sector_data}")
+            
+            if top_countries:
+                st.markdown("**Top 5 Target Countries:**")
+                country_col1, country_col2 = st.columns(2)
+                for i, country_data in enumerate(top_countries[:5], 1):
+                    if isinstance(country_data, dict):
+                        country_name = country_data.get("name", "Unknown")
+                        count = country_data.get("count", 0)
+                        with country_col1 if i % 2 == 1 else country_col2:
+                            st.markdown(f"{i}. {country_name} - **{count}** victims")
+                    else:
+                        with country_col1 if i % 2 == 1 else country_col2:
+                            st.markdown(f"{i}. {country_data}")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED RANSOM NOTES =====
+        ransom_notes_list = metadata.get("ransom_notes_list", [])
+        if ransom_notes_list:
+            with st.expander(f"📄 **Ransom Notes ({len(ransom_notes_list)})**", expanded=False):
+                for i, note in enumerate(ransom_notes_list[:50], 1):
+                    if isinstance(note, dict):
+                        note_name = note.get("name", "Unknown")
+                        note_url = note.get("url", "")
+                        st.markdown(f"**{i}. {note_name}**")
+                        if note_url:
+                            st.markdown(f"[View Note]({note_url})")
+                    else:
+                        st.markdown(f"{i}. {note}")
+                if len(ransom_notes_list) > 50:
+                    st.caption(f"Showing 50 of {len(ransom_notes_list)} ransom notes")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED TOOLS USED (Classified by Tactic) =====
+        tools_list = metadata.get("tools_used_list", [])
+        if tools_list:
+            if isinstance(tools_list, dict) and len(tools_list) > 0:
+                total_tools = sum(len(tools) if isinstance(tools, list) else 0 for tools in tools_list.values())
+                st.markdown(f"#### 🛠️ **Tools Used by Group ({total_tools} tools, {len(tools_list)} tactics)**")
+                with st.expander("View Tools by Tactic", expanded=True):
+                    for tactic, tools in sorted(tools_list.items()):
+                        if isinstance(tools, list) and len(tools) > 0:
+                            # Filter out placeholders
+                            valid_tools = [t for t in tools if t and 'placeholder' not in t.lower()]
+                            if valid_tools:
+                                st.markdown(f"**{tactic}** ({len(valid_tools)} tools)")
+                                for tool in valid_tools:
+                                    st.markdown(f"  • {tool}")
+                                st.divider()
+            else:
+                # Fallback for old list format
+                st.markdown(f"#### 🛠️ **Tools Used by Group ({len(tools_list) if isinstance(tools_list, list) else 0})**")
+                with st.expander(f"View Tools", expanded=False):
+                    cols = st.columns(2)
+                    for i, tool in enumerate(tools_list[:50] if isinstance(tools_list, list) else []):
+                        with cols[i % 2]:
+                            st.markdown(f"• {tool}")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED VULNERABILITIES/CVEs =====
+        vuln_list = metadata.get("vulnerabilities_list", [])
+        if vuln_list:
+            st.markdown(f"#### 🔴 **Vulnerabilities Exploited ({len(vuln_list)})**")
+            with st.expander(f"View {len(vuln_list)} CVEs", expanded=False):
+                cols = st.columns(2)
+                for i, cve in enumerate(vuln_list[:50]):
+                    with cols[i % 2]:
+                        st.markdown(f"[{cve}](https://nvd.nist.gov/vuln/detail/{cve})")
+                if len(vuln_list) > 50:
+                    st.caption(f"Showing 50 of {len(vuln_list)} CVEs")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED TTPs/TACTICS =====
+        ttps_list = metadata.get("ttps_list", [])
+        if ttps_list:
+            st.markdown(f"#### 📊 **TTPs (Tactics, Techniques & Procedures) ({len(ttps_list)})**")
+            with st.expander(f"View {len(ttps_list)} TTPs", expanded=False):
+                cols = st.columns(2)
+                for i, ttp in enumerate(ttps_list[:50]):
+                    with cols[i % 2]:
+                        st.markdown(f"• {ttp}")
+                if len(ttps_list) > 50:
+                    st.caption(f"Showing 50 of {len(ttps_list)} TTPs")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED NEGOTIATION CHATS =====
+        chats_list = metadata.get("negotiation_chats_list", [])
+        if chats_list:
+            st.markdown(f"#### 💬 **Negotiation Chats ({len(chats_list)})**")
+            with st.expander(f"View {len(chats_list)} Negotiation Chats", expanded=False):
+                for i, chat in enumerate(chats_list[:50], 1):
+                    if isinstance(chat, dict):
+                        chat_title = chat.get("title", "Unknown")
+                        chat_url = chat.get("url", "")
+                        st.markdown(f"**{i}. {chat_title}**")
+                        if chat_url:
+                            st.caption(f"URL: {chat_url}")
+                    else:
+                        st.markdown(f"{i}. {chat}")
+                if len(chats_list) > 50:
+                    st.caption(f"Showing 50 of {len(chats_list)} chats")
+        
+        st.markdown("---")
+        
+        # ===== DETAILED YARA RULES =====
+        yara_list = metadata.get("yara_rules_list", [])
+        if yara_list:
+            st.markdown(f"#### 🔐 **YARA Rules ({len(yara_list)})**")
+            with st.expander(f"View {len(yara_list)} YARA Rules", expanded=False):
+                for i, rule in enumerate(yara_list[:50], 1):
+                    if isinstance(rule, dict):
+                        rule_name = rule.get("name", "Unknown")
+                        rule_url = rule.get("url", "")
+                        st.markdown(f"**{i}. {rule_name}**")
+                        if rule_url:
+                            st.caption(f"URL: {rule_url}")
+                    else:
+                        st.markdown(f"{i}. {rule}")
+                if len(yara_list) > 50:
+                    st.caption(f"Showing 50 of {len(yara_list)} YARA rules")
+        
+        st.markdown("---")
+        
+        # ===== Tactical Information =====
+        if ransomware_result.get("initial_access_vectors"):
+            with st.expander("🚀 **Initial Access Vectors**", expanded=False):
+                vectors = ransomware_result.get("initial_access_vectors", [])
+                for i, vector in enumerate(vectors, 1):
+                    st.markdown(f"{i}. {vector}")
+        
+        # ===== CVEs Exploited (API) =====
+        if ransomware_result.get("cves"):
+            with st.expander("🔴 **CVEs from API Data**", expanded=False):
+                cves = ransomware_result.get("cves", [])
+                for cve in cves:
+                    st.markdown(f"[{cve}](https://nvd.nist.gov/vuln/detail/{cve})")
+        
+        # ===== Active Regions =====
+        if ransomware_result.get("active_regions"):
+            with st.expander("🌍 **Active Regions**", expanded=False):
+                regions = ransomware_result.get("active_regions", [])
+                st.markdown(", ".join(regions))
+        
+        # ===== Related Groups =====
+        if ransomware_result.get("related_groups"):
+            with st.expander("🔗 **Related Groups**", expanded=False):
+                related = ransomware_result.get("related_groups", [])
+                for group in related:
+                    st.markdown(f"• {group}")
+        
+        st.markdown("---")
+        
+        # ===== Display Victim Domains =====
+        total_victims = ransomware_result.get("statistics", {}).get("total_victims", 0)
+        victim_domains = ransomware_result.get("victim_domains", [])
+        
+        st.markdown(f"#### 👥 **Victims ({total_victims} in database)**")
+        st.info(f"🔗 **{len(victim_domains)} victim domains extracted for Phase 2 analysis across all intelligence sources**")
+        
+        if victim_domains:
+            with st.expander(f"View {len(victim_domains)} Extracted Victim Domains", expanded=False):
+                # Create victims table
+                victims_data = []
+                for i, domain in enumerate(victim_domains[:100], 1):  # Show top 100
+                    victims_data.append({
+                        "#": i,
+                        "Victim Domain": domain
+                    })
+                
+                if victims_data:
+                    df_victims = pd.DataFrame(victims_data)
+                    st.dataframe(
+                        df_victims,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "#": st.column_config.NumberColumn("#", width="small"),
+                            "Victim Domain": st.column_config.TextColumn("Victim Domain", width="large"),
+                        }
+                    )
+                    
+                    if len(victim_domains) > 100:
+                        st.caption(f"Showing 100 of {len(victim_domains)} victims")
+        
+        st.markdown("---")
+        
+        # ===== Display IoCs =====
+        iocs_count = ransomware_result.get("metadata", {}).get("iocs_count", 0)
+        iocs_list = ransomware_result.get("iocs_list", [])
+        
+        if iocs_count > 0 or iocs_list:
+            st.markdown(f"#### 🎯 **Indicators of Compromise (IoCs) ({iocs_count} available)**")
+            
+            if iocs_list:
+                with st.expander(f"View {len(iocs_list)} Extracted IoCs", expanded=False):
+                    for i, ioc in enumerate(iocs_list[:100], 1):  # Show top 100
+                        st.code(ioc, language="text")
+                    
+                    if len(iocs_list) > 100:
+                        st.caption(f"Showing 100 of {len(iocs_list)} IoCs")
+            else:
+                st.info(f"✓ {iocs_count} IoC(s) available on ransomware.live website")
+        
+        st.markdown("---")
+
+    
+    # ===== SECTION 2: VICTIM DOMAIN INTELLIGENCE (PHASE 2) =====
+    if "victim_domain_correlation" in results and results["victim_domain_correlation"]:
+        st.markdown("### 🔗 **Victim Domain Intelligence (Phase 2 Analysis)**")
+        st.markdown("Analyzing extracted victim domains across all intelligence sources")
+        
+        correlation_data = results["victim_domain_correlation"]
+        
+        # Show list of domains being analyzed
+        domain_list = list(correlation_data.keys())
+        source_count = len([s for s in results.keys() if s not in ['Ransomware.live', 'victim_domain_correlation']])
+        
+        info_col1, info_col2 = st.columns(2)
+        with info_col1:
+            st.info(f"🌐 **Domains Analyzed:** {len(domain_list)}")
+        with info_col2:
+            st.info(f"📡 **Intelligence Sources:** {source_count}")
+        
+        # Create tabs for each domain
+        domain_tabs = st.tabs([f"🌐 {d}" for d in domain_list])
+        
+        for domain, domain_tab in zip(domain_list, domain_tabs):
+            with domain_tab:
+                domain_results = correlation_data[domain]
+                
+                # Show domain header
+                st.markdown(f"#### **{domain}** - Multi-Source Analysis")
+                
+                # Create columns for sources
+                source_names = list(domain_results.keys())
+                
+                if source_names:
+                    # Create sub-tabs for each source querying this domain
+                    source_tabs = st.tabs([s for s in source_names])
+                    
+                    for source_name, source_tab in zip(source_names, source_tabs):
+                        with source_tab:
+                            source_result = domain_results[source_name]
+                            
+                            if isinstance(source_result, dict):
+                                if "error" in source_result:
+                                    st.error(f"Could not retrieve data from {source_name}")
+                                elif not source_result or len(source_result) == 0:
+                                    st.info(f"No threats found on {source_name}")
+                                else:
+                                    # Display using appropriate renderer
+                                    try:
+                                        if source_name == "VirusTotal":
+                                            display_virustotal_results(source_result)
+                                        elif source_name == "Shodan":
+                                            display_shodan_results(source_result)
+                                        elif source_name == "AlienVault OTX":
+                                            display_otx_results(source_result)
+                                        elif source_name == "IPInfo":
+                                            display_ipinfo_results(source_result)
+                                        elif source_name == "AbuseIPDB":
+                                            display_abuseipdb_results(source_result)
+                                        elif source_name == "URLscan":
+                                            display_urlscan_results(source_result)
+                                        elif source_name == "URLhaus":
+                                            display_urlhaus_results(source_result)
+                                        else:
+                                            st.json(source_result)
+                                    except Exception as e:
+                                        st.error(f"Error displaying results: {str(e)}")
+                            else:
+                                st.info(f"No data from {source_name}")
+    
+    st.markdown("---")
+
+
+def display_header():
+    """Display application header with CTI professional branding"""
+    # Display logo as main header - full width, enlarged, no expand button
+    st.image(".streamlit/x10_logo.jpeg", use_column_width=True, output_format="JPEG")
+    
+    st.markdown("---")
+    
+    # Stats columns below logo
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.markdown("""
+        ### <span style='color: #ff4444; font-weight: bold;'>Intelligence Command Platform</span>
+        """, unsafe_allow_html=True)
+        total_supported = len(Config.SUPPORTED_INTELLIGENCE_SOURCES)
+        st.markdown(f"""
+        **Real-time threat intelligence aggregation across {total_supported} premium intelligence sources**
+        
+        🎯 **Designed for:** Security Operations Centers (SOCs) | Threat Analysts | Incident Response Teams
+        """)
 
 
 def display_threat_group_results(results: Dict[str, Any], threat_group: str):
@@ -1365,6 +1806,9 @@ def display_source_selection():
     with col5:
         threatfox = st.checkbox("ThreatFox", value=bool(Config.THREATFOX_API_KEY), disabled=not Config.THREATFOX_API_KEY)
         yaraify = st.checkbox("YARAify", value=bool(Config.YARAIFY_API_KEY), disabled=not Config.YARAIFY_API_KEY)
+        # Local/CSV based integrations that don't require API keys
+        sslbl = st.checkbox("SSLBL", value=True)
+        feodo = st.checkbox("Feodo Tracker", value=True)
     selected_sources = []
     if vt:
         selected_sources.append("VirusTotal")
@@ -1394,6 +1838,10 @@ def display_source_selection():
         selected_sources.append("ThreatFox")
     if yaraify:
         selected_sources.append("YARAify")
+    if sslbl:
+        selected_sources.append("SSLBL")
+    if feodo:
+        selected_sources.append("Feodo Tracker")
     
     return selected_sources
 
@@ -2693,6 +3141,131 @@ def display_yaraify_results(data: Dict[str, Any]):
     else:
         st.warning(f"⚠️ Query Status: {query_status}")
 
+
+def display_sslbl_results(data: Dict[str, Any]):
+    """Display SSLBL results (SSL Certificate Blacklist - Botnet C2 IPs and JA3 fingerprints)"""
+    st.subheader("🔒 SSLBL Results")
+    
+    if not data:
+        st.info("ℹ️ No SSLBL data available")
+        return
+    
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+    
+    if data.get("query_status") == "not_found":
+        st.success("✅ Clean - Not found in SSLBL blacklist")
+        return
+    
+    if data.get("query_status") == "found":
+        st.error("🚨 ALERT - Found in SSLBL Botnet C2 Blacklist!")
+        
+        # Display threat info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Threat Level", data.get("threat_level", "unknown").upper())
+        with col2:
+            st.metric("Matches Found", data.get("matches_count", 0))
+        with col3:
+            st.metric("Source", data.get("source", "SSLBL"))
+        
+        # Display key findings
+        if data.get("key_findings"):
+            st.markdown("**🔍 Key Findings:**")
+            for finding in data["key_findings"]:
+                st.write(f"• {finding}")
+        
+        # Display matches details
+        if data.get("matches"):
+            st.markdown("---")
+            st.markdown("**📋 Match Details:**")
+            matches_table = []
+            for match in data["matches"][:50]:
+                matches_table.append({
+                    "IP Address": match.get("ip_address", "N/A"),
+                    "Port": match.get("port", "N/A"),
+                    "First Seen": match.get("first_seen", "N/A"),
+                    "Reason": match.get("listing_reason", "N/A")
+                })
+            
+            if matches_table:
+                df_matches = pd.DataFrame(matches_table)
+                st.dataframe(df_matches, use_container_width=True, hide_index=True)
+        
+        # Intelligence summary
+        st.markdown("---")
+        if data.get("intelligence"):
+            intel = data["intelligence"]
+            st.markdown("**📊 Intelligence Summary:**")
+            st.write(f"🔹 **Type:** {intel.get('type', 'N/A')}")
+            st.write(f"🔹 **Confidence:** {intel.get('confidence', 'N/A')}")
+            st.write(f"🔹 **Source:** {intel.get('source', 'N/A')}")
+
+
+def display_feodo_results(data: Dict[str, Any]):
+    """Display Feodo Tracker results (Botnet C2 blocklist)"""
+    st.subheader("🚨 Feodo Tracker Results")
+    
+    if not data:
+        st.info("ℹ️ No Feodo Tracker data available")
+        return
+    
+    if "error" in data:
+        st.error(f"Error: {data['error']}")
+        return
+    
+    if data.get("query_status") == "not_found":
+        st.success("✅ Clean - Not found in Feodo Tracker blocklist")
+        return
+    
+    if data.get("query_status") == "found":
+        st.error("🚨 ALERT - Found in Feodo Tracker Botnet C2 Blocklist!")
+        
+        # Display threat info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Threat Level", data.get("threat_level", "unknown").upper())
+        with col2:
+            st.metric("Matches Found", data.get("matches_count", 0))
+        with col3:
+            st.metric("Source", data.get("source", "FeodoTracker"))
+        
+        # Display key findings
+        if data.get("key_findings"):
+            st.markdown("**🔍 Key Findings:**")
+            for finding in data["key_findings"]:
+                st.write(f"• {finding}")
+        
+        # Display matches details
+        if data.get("matches"):
+            st.markdown("---")
+            st.markdown("**📋 Match Details:**")
+            matches_table = []
+            for match in data["matches"][:50]:
+                matches_table.append({
+                    "IOC": match.get("ioc", match.get("ip_address", "N/A")),
+                    "Type": match.get("ioc_type", "N/A"),
+                    "Malware Family": match.get("malware_family", "N/A"),
+                    "First Seen": match.get("first_seen", "N/A"),
+                })
+            
+            if matches_table:
+                df_matches = pd.DataFrame(matches_table)
+                st.dataframe(df_matches, use_container_width=True, hide_index=True)
+        
+        # Intelligence summary
+        st.markdown("---")
+        if data.get("intelligence"):
+            intel = data["intelligence"]
+            st.markdown("**📊 Intelligence Summary:**")
+            st.write(f"🔹 **Type:** {intel.get('type', 'N/A')}")
+            st.write(f"🔹 **Confidence:** {intel.get('confidence', 'N/A')}")
+            st.write(f"🔹 **Source:** {intel.get('source', 'N/A')}")
+            if intel.get("malware_families"):
+                st.write(f"🔹 **Malware Families:** {', '.join(intel['malware_families'])}")
+
+
 def display_results(results: Dict[str, Any], observable: str):
     """Display all results for single indicator - CLEAN VERSION"""
     st.markdown("---")
@@ -2722,6 +3295,8 @@ def display_results(results: Dict[str, Any], observable: str):
         ("Malware Bazaar", results.get("Malware Bazaar"), display_malware_bazaar_results),
         ("ThreatFox", results.get("ThreatFox"), display_threatfox_results),
         ("YARAify", results.get("YARAify"), display_yaraify_results),
+        ("SSLBL", results.get("SSLBL"), display_sslbl_results),
+        ("Feodo Tracker", results.get("Feodo Tracker"), display_feodo_results),
     ]
     
     for source_name, source_data, display_func in source_checks:
@@ -2763,6 +3338,8 @@ def display_results(results: Dict[str, Any], observable: str):
         ("Malware Bazaar", results.get("Malware Bazaar"), display_malware_bazaar_results),
         ("ThreatFox", results.get("ThreatFox"), display_threatfox_results),
         ("YARAify", results.get("YARAify"), display_yaraify_results),
+        ("SSLBL", results.get("SSLBL"), display_sslbl_results),
+        ("Feodo Tracker", results.get("Feodo Tracker"), display_feodo_results),
     ]
     
     # FIXED FILTERING - Include ThreatFox even if it has different structure
@@ -3241,6 +3818,8 @@ def get_api_clients() -> Dict[str, Any]:
             logger.info("✅ Hunter.io initialized")
         except Exception as e:
             logger.error(f"❌ Failed to initialize Hunter.io: {e}")
+
+    
     # Malware Bazaar - Malware threat intelligence
     if Config.MALWARE_BAZAAR_API_KEY:
         try:
@@ -3257,6 +3836,9 @@ def get_api_clients() -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"❌ Failed to initialize ThreatFox: {e}")
     
+    
+
+
     # YARAify - YARA rule detection and malware analysis
     if Config.YARAIFY_API_KEY:
         try:
@@ -3265,6 +3847,20 @@ def get_api_clients() -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"❌ Failed to initialize YARAify: {e}")
     
+    # Feodo Tracker - CSV/JSON based feed (no API key required)
+    try:
+        clients["Feodo Tracker"] = FeodoTrackerAPI()
+        logger.info("✅ Feodo Tracker initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Feodo Tracker: {e}")
+
+    # SSLBL - CSV based SSL/JA3 blacklist (no API key required)
+    try:
+        clients["SSLBL"] = SSLBLAPI()
+        logger.info("✅ SSLBL initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize SSLBL: {e}")
+        
     logger.info(f"📊 Total active clients: {len(clients)}")
     return clients
 
