@@ -16,6 +16,8 @@ from .hunter import HunterAPI
 from .malware_bazaar import MalwareBazaarAPI
 from .threatfox import ThreatFoxAPI
 from .yaraify import YARAifyAPI
+from .sslbl import SSLBLAPI
+from .feodo_tracker import FeodoTrackerAPI
 
 __all__ = [
     "VirusTotalAPI",
@@ -32,4 +34,6 @@ __all__ = [
     "MalwareBazaarAPI",
     "ThreatFoxAPI",
     "YARAifyAPI",
+    "SSLBLAPI",
+    "FeodoTrackerAPI",
 ]
