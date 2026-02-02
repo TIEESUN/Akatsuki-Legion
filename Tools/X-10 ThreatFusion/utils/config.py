@@ -6,6 +6,8 @@ import os
 from typing import Tuple
 from dotenv import load_dotenv
 
+import apis
+
 # Force reload of .env file with override every time this module is imported
 load_dotenv(override=True)
 
@@ -75,6 +77,8 @@ class Config(metaclass=ConfigMeta):
         "Malware Bazaar",
         "ThreatFox",
         "YARAify",
+        "SSLBL",
+        "Feodo Tracker",
     ]
     
     @classmethod
@@ -97,6 +101,8 @@ class Config(metaclass=ConfigMeta):
         
         # URLhaus is always available (no API key required)
         apis["URLhaus"] = True
+        apis["SSLBL"] = True
+        apis["Feodo Tracker"] = True
         
         if os.getenv("IPDETECTIVE_API_KEY", ""):
             apis["IP Detective"] = True
