@@ -487,7 +487,7 @@ from apis import (
     URLscanAPI,
     IPDetectiveAPI,
     GetIPIntelAPI,
-    RansomwareLiveAPI,
+    # RansomwareLiveAPI,
     HunterAPI,
     MalwareBazaarAPI,
     ThreatFoxAPI,
