@@ -6,9 +6,6 @@
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.31.1-orange?style=flat-square)
-![License](https://img.shields.io/badge/license-not%20specified-lightgrey?style=flat-square)
-![Last Commit](https://img.shields.io/github/last-commit/user/x10-threatfusion?style=flat-square)
-![Stars](https://img.shields.io/github/stars/user/x10-threatfusion?style=flat-square)
 
 X-10 ThreatFusion is a modular, enterprise-grade threat intelligence platform built on Streamlit and Python, enabling centralized correlation and investigation across multi-source CTI feeds. It helps you analyze and contextualize observables and ransomware groups by aggregating data from VirusTotal, Shodan, AlienVault OTX, IPInfo, AbuseIPDB, URLhaus, URLscan, IP Detective, GetIPIntel, Ransomware.live, Hunter.io, Malware Bazaar, ThreatFox, YARAify, SSLBL, and Feodo Tracker.
 
